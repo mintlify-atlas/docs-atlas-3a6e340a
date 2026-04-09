@@ -1,0 +1,203 @@
+---
+title: "ResNet"
+description: "The foundational residual network family in timm. Covers ResNet-18 through ResNet-200, ResNeXt, Wide ResNet, SE-ResNet, ResNet-D, and ECA variants."
+---
+
+ResNet was introduced in [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385) (He et al., 2015). The key idea is the **skip connection** (residual shortcut) that lets gradients flow directly through the network, enabling training of very deep architectures. timm's `resnet.py` is a comprehensive implementation that unifies many ResNet variants through a single configurable `ResNet` class.
+
+Sources used in this implementation include the original PyTorch torchvision code, the Gluon-CV variants, and numerous improvements from research papers.
+
+---
+
+## Core Variants
+
+<Tabs>
+  <Tab title="ResNet (Standard)">
+    Classic ResNet models using `BasicBlock` (for smaller models) or `Bottleneck` (for larger models):
+
+    | Model | Layers | Block | Params |
+    |-------|--------|-------|--------|
+    | `resnet10t` | 10 | BasicBlock | 5.4M |
+    | `resnet14t` | 14 | BasicBlock | 5.7M |
+    | `resnet18` | 18 | BasicBlock | 11.7M |
+    | `resnet34` | 34 | BasicBlock | 21.8M |
+    | `resnet26` | 26 | Bottleneck | 16.0M |
+    | `resnet50` | 50 | Bottleneck | 25.6M |
+    | `resnet101` | 101 | Bottleneck | 44.5M |
+    | `resnet152` | 152 | Bottleneck | 60.2M |
+    | `resnet200` | 200 | Bottleneck | 64.7M |
+  </Tab>
+  <Tab title="ResNet-D Variants">
+    ResNet-D variants from [Bag of Tricks for Image Classification](https://arxiv.org/abs/1812.01187) use:
+    - A larger 3-layer stem (instead of a single 7×7 conv)
+    - Average pooling instead of stride-2 conv for downsampling in residual shortcuts
+
+    Naming convention: append `d` to the standard model name.
+
+    | Model | Notes |
+    |-------|-------|
+    | `resnet18d` | ResNet-18 with ResNet-D stem |
+    | `resnet34d` | ResNet-34 with ResNet-D stem |
+    | `resnet26d` | ResNet-26 with ResNet-D stem |
+    | `resnet50d` | ResNet-50 with ResNet-D stem |
+    | `resnet101d` | ResNet-101 with ResNet-D stem |
+    | `resnet152d` | ResNet-152 with ResNet-D stem |
+    | `resnet200d` | ResNet-200 with ResNet-D stem |
+
+    `t` variants (e.g., `resnet26t`, `resnet50t`) use a tiered stem with a smaller initial stride for improved small-object performance.
+  </Tab>
+  <Tab title="ResNeXt">
+    [ResNeXt](https://arxiv.org/abs/1611.05431) extends ResNet by adding grouped convolutions (cardinality). The notation `_CxD` means C groups of width D.
+
+    | Model | Groups × Width | Params |
+    |-------|--------------|--------|
+    | `resnext50_32x4d` | 32 × 4 | 25.0M |
+    | `resnext50d_32x4d` | 32 × 4 | 25.0M (ResNet-D) |
+    | `resnext101_32x4d` | 32 × 4 | 44.2M |
+    | `resnext101_32x8d` | 32 × 8 | 88.8M |
+    | `resnext101_32x16d` | 32 × 16 | 194M |
+    | `resnext101_32x32d` | 32 × 32 | 468M |
+    | `resnext101_64x4d` | 64 × 4 | 83.5M |
+
+    <Note>
+    `resnext101_32x16d`, `resnext101_32x32d` include weights from Instagram weakly-supervised pretraining (CC BY-NC 4.0 — not commercially usable). Check the pretrained tag for license details.
+    </Note>
+  </Tab>
+  <Tab title="Wide ResNet">
+    [Wide Residual Networks](https://arxiv.org/abs/1605.07146) increase the width (channels) rather than depth. `wide_resnet50_2` means the channels are 2× the standard ResNet-50:
+
+    | Model | Width Multiplier | Params |
+    |-------|-----------------|--------|
+    | `wide_resnet50_2` | 2× | 68.9M |
+    | `wide_resnet101_2` | 2× | 126.9M |
+  </Tab>
+  <Tab title="SE-ResNet / SE-ResNeXt">
+    [Squeeze-and-Excitation Networks](https://arxiv.org/abs/1709.01507) add channel-wise recalibration (SE blocks) to each residual block:
+
+    | Model | Notes |
+    |-------|-------|
+    | `seresnet18` | SE-ResNet-18 |
+    | `seresnet34` | SE-ResNet-34 |
+    | `seresnet50` | SE-ResNet-50 |
+    | `seresnet101` | SE-ResNet-101 |
+    | `seresnet152` | SE-ResNet-152 |
+    | `seresnet152d` | SE-ResNet-152-D |
+    | `seresnet200d` | SE-ResNet-200-D |
+    | `seresnet269d` | SE-ResNet-269-D |
+    | `seresnext26d_32x4d` | SE-ResNeXt-26-D 32×4 |
+    | `seresnext26t_32x4d` | SE-ResNeXt-26-T 32×4 |
+    | `seresnext50_32x4d` | SE-ResNeXt-50 32×4 |
+    | `seresnext101_32x4d` | SE-ResNeXt-101 32×4 |
+    | `seresnext101_32x8d` | SE-ResNeXt-101 32×8 |
+    | `seresnext101d_32x8d` | SE-ResNeXt-101-D 32×8 |
+    | `seresnext101_64x4d` | SE-ResNeXt-101 64×4 |
+  </Tab>
+  <Tab title="ECA-ResNet">
+    [ECA-Net: Efficient Channel Attention](https://arxiv.org/abs/1910.03151) replaces SE's fully-connected layers with a local 1D convolution over channels, requiring no dimensionality reduction:
+
+    | Model | Notes |
+    |-------|-------|
+    | `ecaresnet26t` | ECA-ResNet-26-T |
+    | `ecaresnet50d` | ECA-ResNet-50-D |
+    | `ecaresnet50t` | ECA-ResNet-50-T |
+    | `ecaresnet101d` | ECA-ResNet-101-D |
+    | `ecaresnet200d` | ECA-ResNet-200-D |
+    | `ecaresnet269d` | ECA-ResNet-269-D |
+    | `ecaresnetlight` | Lightweight variant |
+  </Tab>
+</Tabs>
+
+---
+
+## Key Parameters
+
+The `ResNet` class (and `BasicBlock` / `Bottleneck` blocks) accept:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `num_classes` | `int` | `1000` | Number of output classes. |
+| `in_chans` | `int` | `3` | Number of input channels. |
+| `global_pool` | `str` | `'avg'` | Global pooling mode (`'avg'`, `'max'`, `'avgmax'`). |
+| `cardinality` | `int` | `1` | Number of convolution groups (ResNeXt). |
+| `base_width` | `int` | `64` | Base width for bottleneck blocks. |
+| `drop_rate` | `float` | `0.0` | Classifier dropout rate. |
+| `drop_path_rate` | `float` | `0.0` | Stochastic depth drop rate. |
+| `act_layer` | layer | `nn.ReLU` | Activation function. |
+| `norm_layer` | layer | `nn.BatchNorm2d` | Normalization layer. |
+| `attn_layer` | layer | `None` | Attention layer (e.g., SE or ECA). |
+| `aa_layer` | layer | `None` | Anti-aliasing layer (blur pooling). |
+
+---
+
+## Code Examples
+
+<AccordionGroup>
+  <Accordion title="Load ResNet-50 with pretrained weights">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model('resnet50', pretrained=True)
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        output = model(x)
+
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="ResNeXt for transfer learning">
+    ```python
+    import timm
+
+    # ResNeXt-50 32x4d with pretrained weights, 10 output classes
+    model = timm.create_model(
+        'resnext50_32x4d',
+        pretrained=True,
+        num_classes=10,
+    )
+    print(model.num_classes)  # 10
+    ```
+  </Accordion>
+  <Accordion title="Extract backbone features">
+    ```python
+    import timm
+    import torch
+
+    # features_only=True removes the classifier and global pool
+    model = timm.create_model(
+        'resnet50d',
+        pretrained=True,
+        features_only=True,
+        out_indices=(2, 3, 4),  # stages to return
+    )
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        features = model(x)
+
+    for f in features:
+        print(f.shape)
+    # torch.Size([1, 512, 28, 28])
+    # torch.Size([1, 1024, 14, 14])
+    # torch.Size([1, 2048, 7, 7])
+    ```
+  </Accordion>
+  <Accordion title="SE-ResNet with stochastic depth">
+    ```python
+    import timm
+
+    model = timm.create_model(
+        'seresnet50',
+        pretrained=True,
+        drop_path_rate=0.1,  # stochastic depth for fine-tuning
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+ResNet-D variants (e.g., `resnet50d`) generally outperform their vanilla counterparts on ImageNet and are a good default choice. The anti-aliased variants (`resnetblur18`, `resnetaa50`) add blur pooling to improve shift-equivariance.
+</Tip>

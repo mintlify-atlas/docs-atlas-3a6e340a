@@ -1,0 +1,169 @@
+---
+title: "ConvNeXt"
+description: "A modernized pure-CNN architecture that matches Vision Transformers in performance. timm includes ConvNeXt Tiny through XXLarge and the ConvNeXt V2 series."
+---
+
+ConvNeXt was introduced in [A ConvNet for the 2020s](https://arxiv.org/abs/2201.03545) (Liu et al., 2022). It systematically applies design choices from Vision Transformers to a standard ResNet and arrives at a pure convolutional architecture that matches or exceeds Swin Transformer's performance across scales.
+
+ConvNeXt V2 ([Co-designing and Scaling ConvNets with Masked Autoencoders](https://arxiv.org/abs/2301.00808)) adds Global Response Normalization (GRN) to the MLP blocks and pairs the architecture with a masked autoencoder pre-training strategy.
+
+timm's implementation (`timm/models/convnext.py`) provides a single `ConvNeXt` class that covers both V1 and V2 variants via the `use_grn` flag.
+
+---
+
+## Key Architectural Features
+
+<CardGroup cols={2}>
+  <Card title="Depthwise Convolution" icon="layer-group">
+    Each ConvNeXt block uses a **7×7 depthwise convolution** (large receptive field) followed by two pointwise (1×1) convolutions in an inverted bottleneck arrangement.
+  </Card>
+  <Card title="LayerNorm" icon="table-cells">
+    **LayerNorm** is used throughout (instead of BatchNorm), placed before the depthwise conv in each block. The stem also uses LayerNorm, and downsampling layers use separate LayerNorm.
+  </Card>
+  <Card title="GELU Activation" icon="bolt">
+    **GELU** replaces ReLU in all MLP layers. Only one activation function is used per block (after the first pointwise conv in the inverted bottleneck).
+  </Card>
+  <Card title="Inverted Bottleneck" icon="arrow-up-from-line">
+    The hidden dimension of the MLP is **4× the channel dimension**, following the Transformer MLP ratio convention, and the depthwise conv operates at the expanded channel count.
+  </Card>
+</CardGroup>
+
+**ConvNeXt V2 addition:** Global Response Normalization (GRN) is inserted between the two pointwise convolutions. GRN normalizes features across spatial locations (complementing LayerNorm's per-location normalization) to increase feature diversity.
+
+---
+
+## Model Variants
+
+<Tabs>
+  <Tab title="ConvNeXt V1">
+    Original ConvNeXt variants trained on ImageNet-1k and ImageNet-21k:
+
+    | Model | Depths | Dims | Params |
+    |-------|--------|------|--------|
+    | `convnext_atto` | (2,2,6,2) | (40,80,160,320) | 3.7M |
+    | `convnext_femto` | (2,2,6,2) | (48,96,192,384) | 5.2M |
+    | `convnext_pico` | (2,2,6,2) | (64,128,256,512) | 9.1M |
+    | `convnext_nano` | (2,2,8,2) | (80,160,320,640) | 15.6M |
+    | `convnext_tiny` | (3,3,9,3) | (96,192,384,768) | 28.6M |
+    | `convnext_small` | (3,3,27,3) | (96,192,384,768) | 50.2M |
+    | `convnext_base` | (3,3,27,3) | (128,256,512,1024) | 88.6M |
+    | `convnext_large` | (3,3,27,3) | (192,384,768,1536) | 197.8M |
+    | `convnext_xlarge` | (3,3,27,3) | (256,512,1024,2048) | 350.2M |
+    | `convnext_xxlarge` | (3,4,30,3) | (384,768,1536,3072) | 846M |
+
+    `atto`, `femto`, `pico`, `nano`, and `tiny_hnf` are timm-original model definitions not present in the official ConvNeXt repo.
+
+    `_ols` suffix variants use overlapping stem convolutions instead of the non-overlapping patch stem.
+  </Tab>
+  <Tab title="ConvNeXt V2">
+    ConvNeXt V2 models add Global Response Normalization. Weights are released under CC BY-NC 4.0 (non-commercial):
+
+    | Model | Depths | Dims | Params |
+    |-------|--------|------|--------|
+    | `convnextv2_atto` | (2,2,6,2) | (40,80,160,320) | 3.7M |
+    | `convnextv2_femto` | (2,2,6,2) | (48,96,192,384) | 5.2M |
+    | `convnextv2_pico` | (2,2,6,2) | (64,128,256,512) | 9.1M |
+    | `convnextv2_nano` | (2,2,8,2) | (80,160,320,640) | 15.6M |
+    | `convnextv2_tiny` | (3,3,9,3) | (96,192,384,768) | 28.6M |
+    | `convnextv2_small` | (3,3,27,3) | (96,192,384,768) | 50.3M |
+    | `convnextv2_base` | (3,3,27,3) | (128,256,512,1024) | 88.7M |
+    | `convnextv2_large` | (3,3,27,3) | (192,384,768,1536) | 197.9M |
+    | `convnextv2_huge` | (3,3,27,3) | (352,704,1408,2816) | 660M |
+
+    <Note>
+    ConvNeXt V2 pretrained weights from Meta AI are licensed under CC BY-NC 4.0, which prohibits commercial use. Check the license before using in production.
+    </Note>
+  </Tab>
+</Tabs>
+
+---
+
+## Key Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `in_chans` | `int` | `3` | Number of input image channels. |
+| `num_classes` | `int` | `1000` | Number of output classes. |
+| `global_pool` | `str` | `'avg'` | Global pooling mode. |
+| `depths` | `tuple` | `(3,3,9,3)` | Number of blocks per stage (4 stages). |
+| `dims` | `tuple` | `(96,192,384,768)` | Channel dimensions per stage. |
+| `kernel_sizes` | `int \| tuple` | `7` | Depthwise conv kernel size per stage. |
+| `ls_init_value` | `float` | `1e-6` | Layer Scale init value. `None` disables it. |
+| `stem_type` | `str` | `'patch'` | Stem type: `'patch'`, `'overlap'`, `'overlap_tiered'`. |
+| `use_grn` | `bool` | `False` | Enable Global Response Normalization (V2). |
+| `act_layer` | `str` | `'gelu'` | Activation function. |
+| `drop_rate` | `float` | `0.0` | Classifier dropout rate. |
+| `drop_path_rate` | `float` | `0.0` | Stochastic depth drop rate. |
+
+---
+
+## Code Examples
+
+<AccordionGroup>
+  <Accordion title="Load ConvNeXt-Tiny with pretrained weights">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model('convnext_tiny', pretrained=True)
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        output = model(x)
+
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="ConvNeXt-Base for fine-tuning">
+    ```python
+    import timm
+
+    # Load with ImageNet-21k pretrained weights, fine-tune on 100 classes
+    model = timm.create_model(
+        'convnext_base.clip_laion2b_augreg_ft_in1k',
+        pretrained=True,
+        num_classes=100,
+    )
+    ```
+  </Accordion>
+  <Accordion title="ConvNeXt V2 with stochastic depth">
+    ```python
+    import timm
+
+    model = timm.create_model(
+        'convnextv2_base',
+        pretrained=True,
+        drop_path_rate=0.2,
+    )
+    ```
+  </Accordion>
+  <Accordion title="Feature extraction">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model(
+        'convnext_small',
+        pretrained=True,
+        features_only=True,
+        out_indices=(1, 2, 3),
+    )
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        features = model(x)
+
+    for i, f in enumerate(features):
+        print(f'Stage {i+1}: {f.shape}')
+    # Stage 1: torch.Size([1, 192, 28, 28])
+    # Stage 2: torch.Size([1, 384, 14, 14])
+    # Stage 3: torch.Size([1, 768, 7, 7])
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+When fine-tuning on small datasets, a lower `drop_path_rate` (e.g., 0.1 for ConvNeXt-Tiny, 0.2 for ConvNeXt-Base) combined with Layer Scale (`ls_init_value=1e-6`) provides stable training. ConvNeXt-XXLarge requires significant GPU memory — use gradient checkpointing for fine-tuning.
+</Tip>

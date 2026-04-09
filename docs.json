@@ -1,122 +1,76 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "timm — PyTorch Image Models",
+  "theme": "almond",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#f8c61e",
+    "light": "#fbf9ec",
+    "dark": "#4e412f"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/aef923c5-713a-4a4c-9df8-656dd3394c51.jpg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/huggingface/pytorch-image-models"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/huggingface/pytorch-image-models"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Guides",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "guides/feature-extraction",
+              "guides/finetuning",
+              "guides/training-script",
+              "guides/hf-hub",
+              "guides/augmentation",
+              "guides/hyperparameters"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Model Reference",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "models/overview",
+              "models/vision-transformer",
+              "models/efficientnet",
+              "models/resnet",
+              "models/convnext",
+              "models/swin-transformer",
+              "models/mobile-nets"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core API",
             "pages": [
-              "api-reference/introduction"
-            ]
-          },
-          {
-            "group": "Endpoint examples",
-            "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "reference/models",
+              "reference/data",
+              "reference/optimizers",
+              "reference/schedulers"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

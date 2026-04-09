@@ -1,0 +1,109 @@
+---
+title: "Installation"
+description: "Install timm with pip, from the GitHub repository, or from source. Requires Python 3.8+ and PyTorch."
+---
+
+## Requirements
+
+- **Python** >= 3.8 (3.9–3.12 recommended)
+- **PyTorch** >= 1.7 (install separately from [pytorch.org](https://pytorch.org) for your CUDA version)
+- **torchvision** (installed alongside PyTorch)
+
+<Note>
+  PyTorch is not installed automatically by `pip install timm`. Install the correct PyTorch build for your hardware from [pytorch.org](https://pytorch.org/get-started/locally/) before installing timm.
+</Note>
+
+## Install with pip
+
+<CodeGroup>
+
+```bash Stable release
+pip install timm
+```
+
+```bash Latest from GitHub
+pip install git+https://github.com/huggingface/pytorch-image-models.git
+```
+
+</CodeGroup>
+
+The stable release is recommended for most users. The GitHub install gives you the most recent commits, including new model architectures and bug fixes that have not yet been published to PyPI.
+
+## Optional dependencies
+
+The following packages are declared as dependencies in `timm` and are installed automatically with `pip install timm`:
+
+| Package | Version | Purpose |
+|---|---|---|
+| `huggingface_hub` | >= 0.17.0 | Load and push model weights from the Hugging Face Hub |
+| `safetensors` | >= 0.2 | Load weights stored in the `.safetensors` format |
+| `pyyaml` | any | Parse training configuration files |
+| `numpy` | any | Array utilities used internally by data transforms |
+
+No additional installation is required for Hub or safetensors support.
+
+## Install from source
+
+Installing from source lets you modify the codebase directly and run the latest unreleased changes.
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/huggingface/pytorch-image-models.git
+    cd pytorch-image-models
+    ```
+  </Step>
+  <Step title="Install in editable mode">
+    ```bash
+    pip install -e .
+    ```
+    The `-e` flag installs the package in editable mode so changes to the source files take effect immediately without reinstalling.
+  </Step>
+</Steps>
+
+## Set up a virtual environment
+
+It is recommended to install `timm` inside a virtual environment to avoid dependency conflicts.
+
+<Steps>
+  <Step title="Create a virtual environment">
+    ```bash
+    python -m venv .env
+    ```
+  </Step>
+  <Step title="Activate the environment">
+    ```bash
+    # Linux / macOS
+    source .env/bin/activate
+
+    # Windows
+    .env\Scripts\activate
+    ```
+  </Step>
+  <Step title="Install timm">
+    ```bash
+    pip install timm
+    ```
+  </Step>
+</Steps>
+
+## Verify the installation
+
+Run the following to confirm timm is installed correctly and check the version:
+
+```python
+import timm
+print(timm.__version__)
+```
+
+You can also verify that pretrained models are discoverable:
+
+```bash
+python -c "from timm import list_models; print(list_models(pretrained=True)[:5])"
+```
+
+Expected output:
+
+```python
+['adv_inception_v3', 'bat_resnext26ts', 'beit_base_patch16_224', 'beit_base_patch16_224_in22k', 'beit_base_patch16_384']
+```

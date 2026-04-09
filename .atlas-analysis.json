@@ -1,0 +1,93 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "timm — PyTorch Image Models",
+  "projectDescription": "The largest collection of PyTorch image encoders and backbones, with 700+ pretrained models, training/inference scripts, optimizers, schedulers, and data augmentation utilities for computer vision tasks.",
+  "theme": "almond",
+  "primaryColor": "#f8c61e",
+  "lightColor": "#fbf9ec",
+  "darkColor": "#4e412f",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/feature-extraction",
+              "guides/finetuning",
+              "guides/training-script",
+              "guides/hf-hub",
+              "guides/augmentation",
+              "guides/hyperparameters"
+            ]
+          },
+          {
+            "group": "Model Reference",
+            "pages": [
+              "models/overview",
+              "models/vision-transformer",
+              "models/efficientnet",
+              "models/resnet",
+              "models/convnext",
+              "models/swin-transformer",
+              "models/mobile-nets"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "reference/models",
+              "reference/data",
+              "reference/optimizers",
+              "reference/schedulers"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "700+ pretrained image models (ResNet, EfficientNet, ViT, ConvNeXt, Swin, MaxViT, MobileNet, and more)",
+    "Unified create_model / list_models API for loading any architecture",
+    "Multi-GPU distributed training script with AMP, EMA, and gradient clipping",
+    "Feature extraction without classifier (forward_features, intermediate feature maps)",
+    "Hugging Face Hub integration for pushing and pulling model weights",
+    "Rich data pipeline with RandAugment, MixUp, CutMix, Random Erasing, AugMix",
+    "Extensive optimizer zoo (AdamP, LAMB, LARS, Lion, Muon, NAdamW, MADGRAD, and more)",
+    "Flexible LR schedulers (Cosine, Step, Plateau, Poly, Tanh)",
+    "ONNX export and validation support",
+    "NaFlex variable-resolution dataset and loader support"
+  ],
+  "publicApiSurface": [
+    "timm.create_model(model_name, pretrained, num_classes, ...)",
+    "timm.list_models(filter, pretrained)",
+    "timm.list_pretrained()",
+    "timm.is_model(model_name)",
+    "timm.get_pretrained_cfg(model_name)",
+    "model.forward_features(x)",
+    "model.forward_head(x)",
+    "timm.data.create_dataset(name, root, ...)",
+    "timm.data.create_loader(dataset, ...)",
+    "timm.data.create_transform(input_size, ...)",
+    "timm.data.resolve_data_config(model_or_cfg)",
+    "timm.data.Mixup(...)",
+    "timm.optim.create_optimizer_v2(model, opt, lr, ...)",
+    "timm.optim.list_optimizers()",
+    "timm.scheduler.create_scheduler_v2(optimizer, sched, ...)",
+    "timm.models.push_to_hf_hub(model, repo_id, ...)"
+  ]
+}

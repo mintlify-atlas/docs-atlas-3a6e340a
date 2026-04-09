@@ -1,80 +1,206 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Load a pretrained model, run inference, extract features, and build an image transform pipeline with timm."
 ---
 
-## Get started in three steps
+This quickstart walks through the most common `timm` workflows: loading a pretrained model, listing available models, fine-tuning, feature extraction, building transforms, and running a full inference example.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Install timm">
+    ```bash
+    pip install timm
+    ```
+    For full installation options including virtual environments and source installs, see [Installation](/installation).
+  </Step>
 
-### Step 1: Set up your local environment
+  <Step title="Load a pretrained model">
+    Use `timm.create_model` to load any pretrained model by name.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```python
+    import timm
 
-### Step 2: Deploy your changes
+    m = timm.create_model('mobilenetv3_large_100', pretrained=True)
+    m.eval()
+    ```
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <Tip>
+      The returned PyTorch model is set to train mode by default. Call `.eval()` before running inference to disable dropout and batch normalization training behaviour.
+    </Tip>
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="List models with pretrained weights">
+    Use `timm.list_models` to discover available models. Pass `pretrained=True` to return only models that have associated pretrained weights.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```python
+    import timm
+    from pprint import pprint
 
-### Step 3: Go live
+    model_names = timm.list_models(pretrained=True)
+    pprint(model_names)
+    # [
+    #     'adv_inception_v3',
+    #     'cspdarknet53',
+    #     'cspresnext50',
+    #     'densenet121',
+    #     'densenet161',
+    #     'densenet169',
+    #     'densenet201',
+    #     'densenetblur121d',
+    #     'dla34',
+    #     'dla46_c',
+    # ]
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    You can filter by name using a wildcard pattern:
 
-## Next steps
+    ```python
+    import timm
+    from pprint import pprint
 
-Now that you have your docs running, explore these key features:
+    model_names = timm.list_models('*resne*t*')
+    pprint(model_names)
+    # [
+    #     'cspresnet50',
+    #     'cspresnet50d',
+    #     'cspresnet50w',
+    #     'cspresnext50',
+    #     ...
+    # ]
+    ```
+  </Step>
 
-<CardGroup cols={2}>
+  <Step title="Fine-tune by changing num_classes">
+    To adapt a pretrained model for a new classification task, pass `num_classes` to replace the final classifier layer.
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    ```python
+    import timm
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+    NUM_FINETUNE_CLASSES = 10
+    model = timm.create_model(
+        'mobilenetv3_large_100',
+        pretrained=True,
+        num_classes=NUM_FINETUNE_CLASSES,
+    )
+    ```
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+    The rest of the model retains its pretrained weights. You can then write a standard PyTorch training loop to fine-tune on your dataset.
+  </Step>
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+  <Step title="Extract features with forward_features">
+    Call `model.forward_features(input)` instead of `model(input)` to bypass the classifier head and global pooling, returning the raw feature maps from the backbone.
 
-</CardGroup>
+    ```python
+    import timm
+    import torch
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+    x = torch.randn(1, 3, 224, 224)
+    model = timm.create_model('mobilenetv3_large_100', pretrained=True)
+    features = model.forward_features(x)
+    print(features.shape)
+    # torch.Size([1, 960, 7, 7])
+    ```
+
+    <Tip>
+      `forward_features` works on any timm model without any architecture changes. For multi-scale feature maps (e.g. for object detection backbones), create the model with `features_only=True`.
+    </Tip>
+  </Step>
+
+  <Step title="Create image transforms">
+    Use `timm.data.create_transform` to build the preprocessing pipeline a model expects. Pass the model's `pretrained_cfg` to `timm.data.resolve_data_config` to extract the exact configuration used during pretraining.
+
+    ```python
+    import timm
+
+    model = timm.create_model('mobilenetv3_large_100', pretrained=True)
+
+    # Inspect the pretrained config
+    print(model.pretrained_cfg)
+    # {'url': 'https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-weights/mobilenetv3_large_100_ra-f55367f5.pth',
+    #  'num_classes': 1000,
+    #  'input_size': (3, 224, 224),
+    #  'pool_size': (7, 7),
+    #  'crop_pct': 0.875,
+    #  'interpolation': 'bicubic',
+    #  'mean': (0.485, 0.456, 0.406),
+    #  'std': (0.229, 0.224, 0.225),
+    #  'first_conv': 'conv_stem',
+    #  'classifier': 'classifier',
+    #  'architecture': 'mobilenetv3_large_100'}
+
+    # Resolve just the data-related config fields
+    data_cfg = timm.data.resolve_data_config(model.pretrained_cfg)
+    print(data_cfg)
+    # {'input_size': (3, 224, 224),
+    #  'interpolation': 'bicubic',
+    #  'mean': (0.485, 0.456, 0.406),
+    #  'std': (0.229, 0.224, 0.225),
+    #  'crop_pct': 0.875}
+
+    # Build the matching transform pipeline
+    transform = timm.data.create_transform(**data_cfg)
+    print(transform)
+    # Compose(
+    #     Resize(size=256, interpolation=bicubic, max_size=None, antialias=None)
+    #     CenterCrop(size=(224, 224))
+    #     ToTensor()
+    #     Normalize(mean=tensor([0.4850, 0.4560, 0.4060]), std=tensor([0.2290, 0.2240, 0.2250]))
+    # )
+    ```
+
+    <Tip>
+      Always derive the transform from the model's `pretrained_cfg` rather than using generic defaults. The normalization statistics and interpolation mode differ between model families.
+    </Tip>
+  </Step>
+
+  <Step title="Run a full inference example">
+    The following example loads an image from the web, preprocesses it using the model's transform, runs inference, and decodes the top-5 predictions.
+
+    ```python
+    import timm
+    import torch
+    import requests
+    from PIL import Image
+    from io import BytesIO
+
+    # Load the image
+    url = 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/timm/cat.jpg'
+    image = Image.open(requests.get(url, stream=True).raw)
+
+    # Create model and transform
+    model = timm.create_model('mobilenetv3_large_100', pretrained=True).eval()
+    transform = timm.data.create_transform(
+        **timm.data.resolve_data_config(model.pretrained_cfg)
+    )
+
+    # Preprocess the image
+    image_tensor = transform(image)
+    print(image_tensor.shape)
+    # torch.Size([3, 224, 224])
+
+    # Run inference (unsqueeze to add batch dimension)
+    output = model(image_tensor.unsqueeze(0))
+    print(output.shape)
+    # torch.Size([1, 1000])
+
+    # Convert logits to probabilities
+    probabilities = torch.nn.functional.softmax(output[0], dim=0)
+
+    # Get top-5 predictions
+    values, indices = torch.topk(probabilities, 5)
+
+    # Decode with ImageNet labels
+    IMAGENET_1k_URL = 'https://storage.googleapis.com/bit_models/ilsvrc2012_wordnet_lemmas.txt'
+    IMAGENET_1k_LABELS = requests.get(IMAGENET_1k_URL).text.strip().split('\n')
+    results = [
+        {'label': IMAGENET_1k_LABELS[idx], 'value': val.item()}
+        for val, idx in zip(values, indices)
+    ]
+    print(results)
+    # [{'label': 'tabby, tabby_cat', 'value': 0.5101},
+    #  {'label': 'tiger_cat', 'value': 0.2249},
+    #  {'label': 'Egyptian_cat', 'value': 0.1835},
+    #  {'label': 'mouse, computer_mouse', 'value': 0.0068},
+    #  {'label': 'motor_scooter, scooter', 'value': 0.0049}]
+    ```
+  </Step>
+</Steps>

@@ -1,0 +1,96 @@
+---
+title: "Introduction"
+description: "timm (PyTorch Image Models) is a library of state-of-the-art computer vision models, layers, utilities, optimizers, schedulers, data-loaders, augmentations, and training scripts."
+---
+
+## What is timm?
+
+`timm` is a library containing state-of-the-art computer vision models, layers, utilities, optimizers, schedulers, data-loaders, augmentations, and training/evaluation scripts. It is designed to be flexible and easy to use, providing a single unified interface for working with hundreds of pretrained models.
+
+<Note>
+  timm comes packaged with over 700 pretrained models trained on ImageNet and other datasets, making it one of the largest collections of ready-to-use vision models available.
+</Note>
+
+Originally created by Ross Wightman, `timm` is now maintained by Hugging Face and is actively developed with new architectures and pretrained weights added regularly.
+
+## Key features
+
+- **700+ pretrained models** — ResNets, EfficientNets, ViTs, ConvNeXts, Swin Transformers, and many more, all available with a single function call.
+- **Unified API** — Every model exposes the same interface: `create_model`, `forward`, `forward_features`, and `forward_head`, regardless of architecture.
+- **Training scripts** — Production-quality training, validation, and inference scripts included and ready to use.
+- **Feature extraction** — Extract intermediate feature maps from any model without modifying its architecture using `forward_features` or multi-scale feature extraction mode.
+- **Hugging Face Hub integration** — Load models and weights directly from the Hub, and push your own fine-tuned models with `huggingface_hub` built in as a dependency.
+- **Optimizers** — Implementations of AdamP, SGDP, RMSpropTF, Adafactor, Lookahead, Muon, AdaMuon, NAdaMuon, and more.
+- **Schedulers** — Cosine, step, plateau, polynomial decay, and other learning rate schedulers with warm-up support.
+- **Augmentation** — Auto-augment, RandAugment, CutMix, MixUp, and other augmentation strategies integrated into the data pipeline.
+
+## Public API overview
+
+The top-level `timm` namespace exposes the most commonly used functions:
+
+```python
+import timm
+
+# Create a model (with or without pretrained weights)
+model = timm.create_model('mobilenetv3_large_100', pretrained=True)
+
+# List all available models
+all_models = timm.list_models()
+
+# List only models with pretrained weights
+pretrained_models = timm.list_models(pretrained=True)
+
+# Check whether a model name is registered
+timm.is_model('resnet50')  # True
+
+# List pretrained model names (alias for list_models(pretrained=True))
+timm.list_pretrained()
+```
+
+### Model inference and feature extraction
+
+```python
+import timm
+import torch
+
+model = timm.create_model('mobilenetv3_large_100', pretrained=True).eval()
+
+x = torch.randn(1, 3, 224, 224)
+
+# Standard forward pass (returns logits)
+output = model(x)
+
+# Feature extraction — bypasses the classifier head and global pooling
+features = model.forward_features(x)
+```
+
+### Data pipeline
+
+```python
+import timm
+
+model = timm.create_model('mobilenetv3_large_100', pretrained=True)
+
+# Resolve the data config used during pretraining
+data_cfg = timm.data.resolve_data_config(model.pretrained_cfg)
+
+# Build the matching transform pipeline
+transform = timm.data.create_transform(**data_cfg)
+```
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Load a pretrained model, run inference, and extract features in minutes.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install timm with pip or from source and verify your setup.
+  </Card>
+  <Card title="Feature extraction" icon="layers" href="/guides/feature-extraction">
+    Extract intermediate feature maps from any timm model.
+  </Card>
+  <Card title="Models overview" icon="grid" href="/models/overview">
+    Browse all supported architectures and their pretrained weights.
+  </Card>
+</CardGroup>

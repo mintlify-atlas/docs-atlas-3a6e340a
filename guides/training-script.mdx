@@ -1,0 +1,288 @@
+---
+title: "Training Script"
+description: "Use timm's train.py, validate.py, and inference.py scripts to train and evaluate models on ImageNet-style datasets."
+---
+
+`timm` ships with training, validation, and inference scripts in the repository root. These scripts are **not** included in the pip release — clone the repository to use them.
+
+<CardGroup cols={3}>
+  <Card title="train.py" icon="bolt">
+    Full ImageNet-style training with distributed support, AMP, EMA, and a wide range of augmentation options.
+  </Card>
+  <Card title="validate.py" icon="check">
+    Evaluate a model checkpoint or pretrained weights on a validation set and report top-1/top-5 accuracy.
+  </Card>
+  <Card title="inference.py" icon="magnifying-glass">
+    Run inference on a folder of images and output top-k class predictions to a CSV file.
+  </Card>
+</CardGroup>
+
+---
+
+## Training script
+
+The training script (`train.py`) evolved from the [PyTorch ImageNet examples](https://github.com/pytorch/examples) and includes significant enhancements such as CUDA-specific performance improvements, native AMP, and distributed training via `distributed_train.sh`.
+
+The dataset folder should be the **base directory** containing `train/` and `validation/` subdirectories.
+
+### Distributed training
+
+For multi-GPU training, use `distributed_train.sh`. The first argument is the number of GPUs.
+
+```bash
+./distributed_train.sh 4 \
+  --data-dir /data/imagenet \
+  --model seresnet34 \
+  --sched cosine \
+  --epochs 150 \
+  --warmup-epochs 5 \
+  --lr 0.4 \
+  --reprob 0.5 \
+  --remode pixel \
+  --batch-size 256 \
+  --amp \
+  -j 4
+```
+
+<Tip>
+Use PyTorch 1.9+ with native AMP and DDP. `--amp` defaults to native AMP as of timm v0.4.3. Use `--apex-amp` to force NVIDIA Apex components if they are installed.
+</Tip>
+
+### Key training arguments
+
+| Argument | Description |
+|----------|-------------|
+| `--data-dir DIR` | Path to dataset root (must contain `train/` and `validation/`) |
+| `--model NAME` | Model name (e.g. `resnet50`, `efficientnet_b2`) |
+| `--epochs N` | Total training epochs |
+| `--batch-size N` | Per-GPU batch size |
+| `--lr LR` | Base learning rate |
+| `--warmup-epochs N` | Linear warmup epochs |
+| `--sched NAME` | LR scheduler (`cosine`, `step`, `tanh`, `plateau`) |
+| `--opt NAME` | Optimizer (`sgd`, `adam`, `adamw`, `rmsproptf`, `lamb`) |
+| `--weight-decay WD` | Weight decay |
+| `--drop RATE` | Dropout rate |
+| `--drop-path RATE` | Stochastic depth drop rate |
+| `--aa CONFIG` | Auto/RandAugment config string (e.g. `rand-m9-mstd0.5`) |
+| `--reprob PROB` | Random erasing probability |
+| `--remode MODE` | Random erasing fill mode (`const`, `rand`, `pixel`) |
+| `--model-ema` | Enable model EMA |
+| `--model-ema-decay D` | EMA decay factor |
+| `--amp` | Enable automatic mixed precision (native AMP) |
+| `--dist-bn MODE` | Distributed BN mode (`reduce`, `broadcast`) |
+| `-j N` | Number of data loading workers |
+| `-c FILE` | Path to a YAML config file |
+
+---
+
+## Validation script
+
+The validation script (`validate.py`) takes the **validation folder directly** (not the base directory).
+
+```bash
+# Validate using a model's pretrained weights
+python validate.py \
+  --data-dir /imagenet/validation/ \
+  --model seresnext26_32x4d \
+  --pretrained
+```
+
+---
+
+## Inference script
+
+The inference script (`inference.py`) loads a checkpoint and writes top-k class IDs to a CSV.
+
+```bash
+python inference.py \
+  --data-dir /imagenet/validation/ \
+  --model mobilenetv3_large_100 \
+  --checkpoint ./output/train/model_best.pth.tar
+```
+
+---
+
+## Training examples
+
+The following examples are real runs used to produce published `timm` pretrained weights.
+
+<AccordionGroup>
+  <Accordion title="EfficientNet-B2 with RandAugment — 80.4 top-1, 95.1 top-5">
+    Trained on two Titan RTX GPUs with NVIDIA Apex:
+
+    ```bash
+    ./distributed_train.sh 2 \
+      --data-dir /imagenet/ \
+      --model efficientnet_b2 \
+      -b 128 \
+      --sched step \
+      --epochs 450 \
+      --decay-epochs 2.4 \
+      --decay-rate .97 \
+      --opt rmsproptf \
+      --opt-eps .001 \
+      -j 8 \
+      --warmup-lr 1e-6 \
+      --weight-decay 1e-5 \
+      --drop 0.3 \
+      --drop-path 0.2 \
+      --model-ema \
+      --model-ema-decay 0.9999 \
+      --aa rand-m9-mstd0.5 \
+      --remode pixel \
+      --reprob 0.2 \
+      --amp \
+      --lr .016
+    ```
+  </Accordion>
+
+  <Accordion title="MixNet-XL with RandAugment — 80.5 top-1, 94.9 top-5">
+    Trained on two Titan RTX GPUs with NVIDIA Apex:
+
+    ```bash
+    ./distributed_train.sh 2 \
+      --data-dir /imagenet/ \
+      --model mixnet_xl \
+      -b 128 \
+      --sched step \
+      --epochs 450 \
+      --decay-epochs 2.4 \
+      --decay-rate .969 \
+      --opt rmsproptf \
+      --opt-eps .001 \
+      -j 8 \
+      --warmup-lr 1e-6 \
+      --weight-decay 1e-5 \
+      --drop 0.3 \
+      --drop-path 0.2 \
+      --model-ema \
+      --model-ema-decay 0.9999 \
+      --aa rand-m9-mstd0.5 \
+      --remode pixel \
+      --reprob 0.3 \
+      --amp \
+      --lr .016 \
+      --dist-bn reduce
+    ```
+  </Accordion>
+
+  <Accordion title="SE-ResNeXt-26-D / SE-ResNeXt-26-T">
+    These hyperparameters work well across a wide range of ResNet architectures. Increase epoch count as model size grows (approx. 180–200 for ResNe(X)t50, 220+ for larger). Trained on two 1080Ti GPUs:
+
+    ```bash
+    ./distributed_train.sh 2 \
+      --data-dir /imagenet/ \
+      --model seresnext26t_32x4d \
+      --lr 0.1 \
+      --warmup-epochs 5 \
+      --epochs 160 \
+      --weight-decay 1e-4 \
+      --sched cosine \
+      --reprob 0.4 \
+      --remode pixel \
+      -b 112
+    ```
+  </Accordion>
+
+  <Accordion title="EfficientNet-B0 with RandAugment — 77.7 top-1, 95.3 top-5">
+    Adapted from the B2 command with a larger batch size and B0's recommended dropout rate of 0.2:
+
+    ```bash
+    ./distributed_train.sh 2 \
+      --data-dir /imagenet/ \
+      --model efficientnet_b0 \
+      -b 384 \
+      --sched step \
+      --epochs 450 \
+      --decay-epochs 2.4 \
+      --decay-rate .97 \
+      --opt rmsproptf \
+      --opt-eps .001 \
+      -j 8 \
+      --warmup-lr 1e-6 \
+      --weight-decay 1e-5 \
+      --drop 0.2 \
+      --drop-path 0.2 \
+      --model-ema \
+      --model-ema-decay 0.9999 \
+      --aa rand-m9-mstd0.5 \
+      --remode pixel \
+      --reprob 0.2 \
+      --amp \
+      --lr .048
+    ```
+  </Accordion>
+
+  <Accordion title="ResNet50 with JSD loss and AugMix — 79.04 top-1, 94.39 top-5">
+    Uses AugMix with SplitBatchNorm and JSD loss. Trained on two 1080Ti GPUs:
+
+    ```bash
+    ./distributed_train.sh 2 \
+      --data-dir /imagenet \
+      -b 64 \
+      --model resnet50 \
+      --sched cosine \
+      --epochs 200 \
+      --lr 0.05 \
+      --amp \
+      --remode pixel \
+      --reprob 0.6 \
+      --aug-splits 3 \
+      --aa rand-m9-mstd0.5-inc1 \
+      --resplit \
+      --split-bn \
+      --jsd \
+      --dist-bn reduce
+    ```
+  </Accordion>
+
+  <Accordion title="ResNeXt-50 32x4d with RandAugment — 79.762 top-1, 94.60 top-5">
+    These params also work well for SE-ResNeXt-50, SK-ResNeXt-50, and variants up to 101. Tuned for 8 GPUs:
+
+    ```bash
+    ./distributed_train.sh 8 \
+      --data-dir /imagenet \
+      --model resnext50_32x4d \
+      --lr 0.6 \
+      --warmup-epochs 5 \
+      --epochs 240 \
+      --weight-decay 1e-4 \
+      --sched cosine \
+      --reprob 0.4 \
+      --recount 3 \
+      --remode pixel \
+      --aa rand-m7-mstd0.5-inc1 \
+      -b 192 \
+      -j 6 \
+      --amp \
+      --dist-bn reduce
+    ```
+  </Accordion>
+
+  <Accordion title="EfficientNet-ES (EdgeTPU-Small) — 78.066 top-1, 93.926 top-5">
+    Trained by Andrew Lavin on 8 V100s. Final checkpoint is the average of the 8 best checkpoints:
+
+    ```bash
+    ./distributed_train.sh 8 \
+      --data-dir /imagenet \
+      --model efficientnet_es \
+      -b 128 \
+      --sched step \
+      --epochs 450 \
+      --decay-epochs 2.4 \
+      --decay-rate .97 \
+      --opt rmsproptf \
+      --opt-eps .001 \
+      -j 8 \
+      --warmup-lr 1e-6 \
+      --weight-decay 1e-5 \
+      --drop 0.2 \
+      --drop-path 0.2 \
+      --aa rand-m9-mstd0.5 \
+      --remode pixel \
+      --reprob 0.2 \
+      --amp \
+      --lr .064
+    ```
+  </Accordion>
+</AccordionGroup>

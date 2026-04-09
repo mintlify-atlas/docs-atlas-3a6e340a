@@ -1,0 +1,232 @@
+---
+title: "Mobile Networks"
+description: "Lightweight architectures for mobile and edge inference. timm includes MobileNetV3, MobileNetV4, and two EfficientViT families optimized for high-throughput deployment."
+---
+
+timm includes several families of lightweight neural networks designed for efficient inference on mobile and edge devices. These architectures achieve competitive accuracy with significantly fewer parameters and FLOPs compared to full-scale models.
+
+<CardGroup cols={2}>
+  <Card title="MobileNetV3" icon="mobile">
+    Efficient head with hard-swish activation and Squeeze-and-Excitation. Paper: [Searching for MobileNetV3](https://arxiv.org/abs/1905.02244).
+  </Card>
+  <Card title="MobileNetV4" icon="microchip">
+    Universal Inverted Bottleneck blocks with optional hybrid attention. Paper: [MobileNetV4](https://arxiv.org/abs/2404.10518).
+  </Card>
+  <Card title="EfficientViT (MIT)" icon="bolt">
+    Enhanced linear attention for high-resolution vision. Paper: [EfficientViT](https://arxiv.org/abs/2205.14756) (MIT Han Lab).
+  </Card>
+  <Card title="EfficientViT (MSRA)" icon="layer-group">
+    Cascaded group attention for memory-efficient transformers. Paper: [EfficientViT](https://arxiv.org/abs/2305.07027) (Microsoft Research).
+  </Card>
+</CardGroup>
+
+---
+
+## MobileNetV3
+
+MobileNetV3 ([Searching for MobileNetV3](https://arxiv.org/abs/1905.02244)) introduces an "efficient head" design: global average pooling is applied **before** the head convolution, reducing the spatial overhead of the final layers. It uses hard-swish activation (`h-swish`) and Squeeze-and-Excitation (SE) blocks within the MBConv blocks.
+
+timm's `mobilenetv3.py` also serves as the shared implementation for MobileNetV2 (via the EfficientNet builder), MobileNetV4, and other architectures like FBNetV3, HardCoRe-NAS, and LCNet.
+
+### Available Models
+
+| Model | Width | Params | Top-1 (IN-1k) |
+|-------|-------|--------|--------------|
+| `mobilenetv3_small_050` | 0.50× | 1.6M | ~57% |
+| `mobilenetv3_small_075` | 0.75× | 2.0M | ~65% |
+| `mobilenetv3_small_100` | 1.00× | 2.5M | ~67% |
+| `mobilenetv3_large_075` | 0.75× | 3.9M | ~73% |
+| `mobilenetv3_large_100` | 1.00× | 5.5M | ~75% |
+| `mobilenetv3_large_150d` | 1.50× | 14.6M | ~78% |
+| `mobilenetv3_rw` | 1.00× | 5.5M | ~75% (timm) |
+
+The `_small` variants are optimized for very constrained environments; `_large` variants are recommended for most use cases.
+
+---
+
+## MobileNetV4
+
+MobileNetV4 ([MobileNetV4 -- Universal Models for the Mobile Ecosystem](https://arxiv.org/abs/2404.10518)) introduces **Universal Inverted Bottleneck (UIB)** blocks that generalize across multiple factorization options. Hybrid variants add a mobile Multi-Query Attention (MQA) layer for enhanced performance.
+
+timm implements MobileNetV4 through the same `MobileNetV3` class in `mobilenetv3.py`.
+
+### Available Models
+
+| Model | Type | Params |
+|-------|------|--------|
+| `mobilenetv4_conv_small_035` | Conv only, 0.35× | 0.9M |
+| `mobilenetv4_conv_small_050` | Conv only, 0.50× | 1.4M |
+| `mobilenetv4_conv_small` | Conv only, 1.00× | 3.8M |
+| `mobilenetv4_conv_medium` | Conv only | 9.7M |
+| `mobilenetv4_conv_large` | Conv only | 32.6M |
+| `mobilenetv4_hybrid_medium` | Conv + MQA | 11.1M |
+| `mobilenetv4_hybrid_large` | Conv + MQA | 37.8M |
+| `mobilenetv4_conv_aa_medium` | Conv, avg anti-alias | 9.7M |
+| `mobilenetv4_conv_blur_medium` | Conv, blur anti-alias | 9.7M |
+| `mobilenetv4_conv_aa_large` | Conv, avg anti-alias | 32.6M |
+| `mobilenetv4_hybrid_medium_075` | Hybrid, 0.75× | — |
+| `mobilenetv4_hybrid_large_075` | Hybrid, 0.75× | — |
+
+---
+
+## EfficientViT (MIT)
+
+EfficientViT from MIT Han Lab ([EfficientViT: Enhanced Linear Attention for High-Resolution Low-Computation Visual Recognition](https://arxiv.org/abs/2205.14756)) uses a multi-scale linear attention mechanism, replacing the softmax attention in ViT with a lightweight linear approximation that enables efficient inference at high resolutions.
+
+The architecture has two sub-families implemented in `timm/models/efficientvit_mit.py`:
+
+**B-series** (balanced accuracy/efficiency):
+
+| Model | Widths | Depths | Params |
+|-------|--------|--------|--------|
+| `efficientvit_b0` | (8,16,32,64,128) | (1,2,2,2,2) | 3.4M |
+| `efficientvit_b1` | (16,32,64,128,256) | (1,2,3,3,4) | 9.1M |
+| `efficientvit_b2` | (24,48,96,192,384) | (1,3,4,4,6) | 24.3M |
+| `efficientvit_b3` | (32,64,128,256,512) | (1,4,6,6,9) | 48.9M |
+
+**L-series** (large, high accuracy):
+
+| Model | Widths | Depths | Params |
+|-------|--------|--------|--------|
+| `efficientvit_l1` | (32,64,128,256,512) | (1,1,1,6,6) | 52.7M |
+| `efficientvit_l2` | (32,64,128,256,512) | (1,2,2,8,8) | 63.7M |
+| `efficientvit_l3` | (64,128,256,512,1024) | (1,2,2,8,8) | 246.7M |
+
+---
+
+## EfficientViT (MSRA)
+
+EfficientViT from Microsoft Research ([EfficientViT: Memory Efficient Vision Transformer with Cascaded Group Attention](https://arxiv.org/abs/2305.07027)) is a different architecture from the MIT version. It uses **Cascaded Group Attention (CGA)**, where different attention heads process different splits of the feature map and are concatenated in a cascade, improving representational diversity while reducing computation.
+
+Implemented in `timm/models/efficientvit_msra.py`:
+
+| Model | Embed Dims | Depth | Heads | Params |
+|-------|-----------|-------|-------|--------|
+| `efficientvit_m0` | [64, 128, 192] | [1, 2, 3] | [4, 4, 4] | 2.4M |
+| `efficientvit_m1` | [128, 144, 192] | [1, 2, 3] | [2, 3, 3] | 5.7M |
+| `efficientvit_m2` | [128, 192, 224] | [1, 2, 3] | [4, 3, 2] | 11.0M |
+| `efficientvit_m3` | [128, 240, 320] | [1, 2, 3] | [4, 3, 4] | 18.4M |
+| `efficientvit_m4` | [128, 256, 384] | [1, 2, 3] | [4, 4, 4] | 31.0M |
+| `efficientvit_m5` | [192, 288, 384] | [1, 3, 4] | [3, 3, 4] | 33.7M |
+
+---
+
+## Code Examples
+
+<AccordionGroup>
+  <Accordion title="MobileNetV3-Large for inference">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model('mobilenetv3_large_100', pretrained=True)
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        output = model(x)
+
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="MobileNetV3-Small for edge deployment">
+    ```python
+    import timm
+    import torch
+
+    # Smaller variant for constrained devices
+    model = timm.create_model('mobilenetv3_small_100', pretrained=True)
+    model.eval()
+
+    # Get expected input configuration
+    data_config = timm.data.resolve_model_data_config(model)
+    print(data_config['input_size'])  # (3, 224, 224)
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        output = model(x)
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="MobileNetV4 hybrid model">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model('mobilenetv4_hybrid_medium', pretrained=True)
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        output = model(x)
+
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="EfficientViT-B1 (MIT)">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model('efficientvit_b1', pretrained=True)
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        output = model(x)
+
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="EfficientViT-M4 (MSRA)">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model('efficientvit_m4', pretrained=True)
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        output = model(x)
+
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="Transfer learning with a mobile model">
+    ```python
+    import timm
+
+    # Fine-tune MobileNetV4 on a custom dataset
+    model = timm.create_model(
+        'mobilenetv4_conv_medium',
+        pretrained=True,
+        num_classes=10,
+        drop_path_rate=0.1,
+    )
+
+    # Freeze backbone, train head only
+    for name, param in model.named_parameters():
+        if 'classifier' not in name:
+            param.requires_grad = False
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+For ONNX or TorchScript export of mobile models, pass `exportable=True` to `create_model`. This disables any layers that use dynamic control flow not supported by the tracing-based export pipeline.
+</Tip>
+
+---
+
+## Comparison
+
+| Model | Params | FLOPs | Top-1 (IN-1k) | Use Case |
+|-------|--------|-------|--------------|----------|
+| `mobilenetv3_small_100` | 2.5M | 57M | ~67% | Ultra-constrained |
+| `mobilenetv3_large_100` | 5.5M | 226M | ~75% | Mobile-general |
+| `mobilenetv4_conv_small` | 3.8M | 196M | ~74% | Mobile-general |
+| `mobilenetv4_conv_medium` | 9.7M | 858M | ~79% | Mid-range mobile |
+| `mobilenetv4_hybrid_medium` | 11.1M | 981M | ~80%+ | Mid-range + attention |
+| `efficientvit_b1` | 9.1M | 276M | ~79% | GPU-efficient ViT |
+| `efficientvit_m4` | 31.0M | 300M | ~81%+ | GPU-efficient ViT |

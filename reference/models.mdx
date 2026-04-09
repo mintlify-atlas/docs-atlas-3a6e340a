@@ -1,0 +1,368 @@
+---
+title: "Models API"
+description: "Reference documentation for timm model creation, discovery, and configuration functions."
+---
+
+The `timm.models` API provides functions to create, list, and inspect models from the timm registry. Models can be loaded from the local registry, from Hugging Face Hub (`hf-hub:` prefix), or from a local directory (`local-dir:` prefix).
+
+## timm.create_model
+
+```python
+timm.create_model(
+    model_name,
+    pretrained=False,
+    pretrained_cfg=None,
+    pretrained_cfg_overlay=None,
+    checkpoint_path=None,
+    cache_dir=None,
+    scriptable=None,
+    exportable=None,
+    no_jit=None,
+    **kwargs,
+)
+```
+
+Create a model by name. Looks up the model's entrypoint function in the registry and instantiates it with the provided arguments. `**kwargs` are passed through to `timm.models.build_model_with_cfg()` and then to the model class `__init__()`. Keyword argument values set to `None` are pruned before passing so that non-supporting models don't break.
+
+<CodeGroup>
+```python Basic usage
+import timm
+
+# Create model without pretrained weights
+model = timm.create_model('mobilenetv3_large_100')
+
+# Create model with pretrained ImageNet-1k weights
+model = timm.create_model('mobilenetv3_large_100', pretrained=True)
+print(model.num_classes)  # 1000
+
+# Override the classifier head for a 10-class problem
+model = timm.create_model('mobilenetv3_large_100', pretrained=True, num_classes=10)
+print(model.num_classes)  # 10
+```
+
+```python Hugging Face Hub
+import timm
+
+# Load model + weights from Hugging Face Hub
+model = timm.create_model(
+    'hf-hub:timm/vit_base_patch16_224.augreg_in21k',
+    pretrained=True,
+)
+
+# Specify a custom cache directory
+model = timm.create_model(
+    'vit_small_patch14_dinov2.lvd142m',
+    pretrained=True,
+    cache_dir='/data/my-models',
+)
+```
+
+```python Local directory
+import timm
+
+# Load from a local directory containing config.json and weights
+model = timm.create_model('local-dir:/path/to/my-model', pretrained=True)
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="model_name" type="str" required>
+  Name of the model to instantiate. Supports plain names (e.g. `'resnet50'`), tagged names (e.g. `'vit_base_patch16_224.augreg_in21k'`), Hugging Face Hub URIs (`'hf-hub:org/repo'`), and local directory URIs (`'local-dir:/path'`).
+</ParamField>
+
+<ParamField path="pretrained" type="bool" default="False">
+  If `True`, load pretrained ImageNet-1k weights for the model.
+</ParamField>
+
+<ParamField path="pretrained_cfg" type="str | dict | PretrainedCfg | None" default="None">
+  Pass an external pretrained configuration for the model. Accepts a tag string, a config dict, or a `PretrainedCfg` dataclass instance. Takes priority over any tag embedded in `model_name`. Must not be set when sourcing the model from Hugging Face Hub.
+</ParamField>
+
+<ParamField path="pretrained_cfg_overlay" type="dict | None" default="None">
+  A dictionary of key-value overrides to apply on top of the base `pretrained_cfg`. Useful for patching specific fields (e.g. `num_classes`, `mean`, `std`) without replacing the entire config.
+</ParamField>
+
+<ParamField path="checkpoint_path" type="str | Path | None" default="None">
+  Path of a checkpoint file to load *after* the model is initialized. Allows loading arbitrary checkpoints independently of `pretrained`.
+</ParamField>
+
+<ParamField path="cache_dir" type="str | Path | None" default="None">
+  Override the default cache directory used when downloading weights from Hugging Face Hub or PyTorch Hub.
+</ParamField>
+
+<ParamField path="scriptable" type="bool | None" default="None">
+  Set layer config so that the model is JIT-scriptable. Not supported by all models yet.
+</ParamField>
+
+<ParamField path="exportable" type="bool | None" default="None">
+  Set layer config so that the model is traceable / ONNX-exportable. Not fully implemented or obeyed by all models yet.
+</ParamField>
+
+<ParamField path="no_jit" type="bool | None" default="None">
+  Set layer config so that the model does not utilize JIT-scripted layers (currently affects activations only).
+</ParamField>
+
+<ParamField path="**kwargs" type="Any">
+  Additional keyword arguments forwarded to the model entrypoint and `build_model_with_cfg`. Common options include:
+
+  - `drop_rate` (`float`) — Classifier dropout rate for training.
+  - `drop_path_rate` (`float`) — Stochastic depth drop rate for training.
+  - `global_pool` (`str`) — Classifier global pooling type (e.g. `'avg'`, `'max'`, `'avgmax'`).
+  - `num_classes` (`int`) — Number of output classes for the classifier head.
+  - `in_chans` (`int`) — Number of input image channels.
+</ParamField>
+
+### Returns
+
+`torch.nn.Module` — The instantiated model.
+
+---
+
+## timm.list_models
+
+```python
+timm.list_models(
+    filter='',
+    module='',
+    pretrained=False,
+    exclude_filters='',
+    name_matches_cfg=False,
+    include_tags=None,
+)
+```
+
+Return a sorted list of available model names. Supports wildcard filtering via `fnmatch` patterns.
+
+```python
+import timm
+
+# List all models
+all_models = timm.list_models()
+
+# Wildcard filter — all ResNet variants
+resnet_models = timm.list_models('resnet*')
+
+# Models in a specific submodule
+vit_models = timm.list_models(module='vision_transformer')
+
+# Only models that have pretrained weights (includes pretrained tags)
+pretrained_models = timm.list_models('efficientnet*', pretrained=True)
+
+# Exclude certain variants
+models = timm.list_models('resnet*', exclude_filters='*d')
+```
+
+### Parameters
+
+<ParamField path="filter" type="str | list[str]" default="''">
+  Wildcard filter string (or list of strings) passed to `fnmatch`. For example `'resnet*'` matches all ResNet variants, `['resnet*', 'efficientnet*']` matches both families. Empty string means no filtering.
+</ParamField>
+
+<ParamField path="module" type="str | list[str]" default="''">
+  Limit results to a specific timm submodule (e.g. `'vision_transformer'`, `'resnet'`). Accepts a single module name or a list of names.
+</ParamField>
+
+<ParamField path="pretrained" type="bool" default="False">
+  If `True`, include only models that have pretrained weights available.
+</ParamField>
+
+<ParamField path="exclude_filters" type="str | list[str]" default="''">
+  Wildcard filter(s) for models to *exclude* after the include filter is applied.
+</ParamField>
+
+<ParamField path="name_matches_cfg" type="bool" default="False">
+  If `True`, include only models whose name exactly matches a registered default config entry (excludes some aliases).
+</ParamField>
+
+<ParamField path="include_tags" type="bool | None" default="None">
+  Include pretrained tags in returned model names (e.g. `'vit_base_patch16_224.augreg_in21k'`). Defaults to `True` when `pretrained=True`, otherwise `False`.
+</ParamField>
+
+### Returns
+
+`list[str]` — Alphabetically sorted list of model name strings.
+
+---
+
+## timm.list_pretrained
+
+```python
+timm.list_pretrained(
+    filter='',
+    exclude_filters='',
+)
+```
+
+Convenience wrapper around `list_models` that always sets `pretrained=True` and `include_tags=True`. Returns models that have pretrained weights, with their full tag names.
+
+```python
+import timm
+
+# All pretrained models
+pretrained = timm.list_pretrained()
+
+# Pretrained ViT models only
+vit_pretrained = timm.list_pretrained('vit_*')
+```
+
+### Parameters
+
+<ParamField path="filter" type="str | list[str]" default="''">
+  Wildcard filter string applied to model names (including tags).
+</ParamField>
+
+<ParamField path="exclude_filters" type="str" default="''">
+  Wildcard filter to exclude models from the result.
+</ParamField>
+
+### Returns
+
+`list[str]` — Sorted list of pretrained model name strings with tags.
+
+---
+
+## timm.is_model
+
+```python
+timm.is_model(model_name)
+```
+
+Check whether a model architecture is registered in the timm registry.
+
+```python
+import timm
+
+timm.is_model('resnet50')       # True
+timm.is_model('not_a_model')    # False
+
+# Tags are stripped before lookup — only the architecture name matters
+timm.is_model('vit_base_patch16_224.augreg_in21k')  # True
+```
+
+### Parameters
+
+<ParamField path="model_name" type="str" required>
+  Model name to check. Any tag suffix (`.tag`) is stripped before the lookup.
+</ParamField>
+
+### Returns
+
+`bool` — `True` if the architecture name exists in the registry.
+
+---
+
+## timm.get_pretrained_cfg
+
+```python
+timm.get_pretrained_cfg(model_name, allow_unregistered=True)
+```
+
+Retrieve the `PretrainedCfg` dataclass for a specific model name or `model_name.tag` combination.
+
+```python
+import timm
+
+cfg = timm.get_pretrained_cfg('vit_base_patch16_224.augreg_in21k')
+print(cfg.input_size)   # (3, 224, 224)
+print(cfg.mean)         # (0.5, 0.5, 0.5)
+print(cfg.hf_hub_id)    # 'timm/vit_base_patch16_224.augreg_in21k'
+```
+
+### Parameters
+
+<ParamField path="model_name" type="str" required>
+  Model name or `model_name.tag` string to look up.
+</ParamField>
+
+<ParamField path="allow_unregistered" type="bool" default="True">
+  If `True`, return `None` for models with no registered config instead of raising a `RuntimeError`. If `False`, raise a `RuntimeError` for unregistered model architectures.
+</ParamField>
+
+### Returns
+
+`PretrainedCfg | None` — A deep copy of the registered pretrained config, or `None` if the model is unregistered and `allow_unregistered=True`.
+
+---
+
+## model.forward_features
+
+```python
+model.forward_features(x)
+```
+
+A method available on all timm models that runs the forward pass through the backbone (stem + stages) *without* the classifier head. Returns the raw feature tensor (or sequence of tensors for multi-scale models). This is the primary interface for using timm models as feature extractors.
+
+```python
+import torch
+import timm
+
+model = timm.create_model('resnet50', pretrained=True)
+model.eval()
+
+x = torch.randn(1, 3, 224, 224)
+features = model.forward_features(x)
+print(features.shape)  # (1, 2048, 7, 7) for resnet50
+
+# For ViT-style models
+model = timm.create_model('vit_base_patch16_224', pretrained=True)
+features = model.forward_features(x)
+print(features.shape)  # (1, 197, 768) — includes CLS token
+```
+
+### Parameters
+
+<ParamField path="x" type="torch.Tensor" required>
+  Input tensor of shape `(B, C, H, W)` where `B` is batch size, `C` is channels, and `H`, `W` are spatial dimensions.
+</ParamField>
+
+### Returns
+
+`torch.Tensor` — Feature tensor. Shape depends on the model architecture:
+- CNN models: `(B, C, H', W')` spatial feature map
+- Transformer models: `(B, N, D)` sequence of patch embeddings (including CLS token)
+
+<Note>
+  Use `model.forward_head(features)` to apply the classifier head to the output of `forward_features()`, or call `model(x)` for the full forward pass.
+</Note>
+
+---
+
+## model.reset_classifier
+
+```python
+model.reset_classifier(num_classes, global_pool='')
+```
+
+Replace the classifier head on a model. Useful for fine-tuning on a different number of classes after loading pretrained weights.
+
+```python
+import timm
+
+model = timm.create_model('resnet50', pretrained=True)
+print(model.num_classes)  # 1000
+
+# Replace head for a 10-class problem
+model.reset_classifier(10)
+print(model.num_classes)  # 10
+
+# Reset to feature-only mode (no classifier)
+model.reset_classifier(0)
+
+# Change pooling type at the same time
+model.reset_classifier(100, global_pool='avgmax')
+```
+
+### Parameters
+
+<ParamField path="num_classes" type="int" required>
+  Number of output classes for the new classifier. Pass `0` to remove the classifier entirely (the model will return pooled features).
+</ParamField>
+
+<ParamField path="global_pool" type="str" default="''">
+  Global pooling type to use in the new head. Common values: `'avg'` (average pooling), `'max'` (max pooling), `'avgmax'` (concatenated avg+max). An empty string keeps the existing pooling configuration.
+</ParamField>
+
+<Tip>
+  `reset_classifier` is equivalent to calling `create_model(..., num_classes=N)` but avoids reloading weights. It is the recommended way to change the output size of a pretrained model.
+</Tip>

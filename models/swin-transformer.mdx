@@ -1,0 +1,184 @@
+---
+title: "Swin Transformer"
+description: "Hierarchical vision transformer with shifted-window self-attention. timm includes Swin-Tiny through Swin-Large, Swin S3, and SwinV2 variants."
+---
+
+Swin Transformer was introduced in [Swin Transformer: Hierarchical Vision Transformer using Shifted Windows](https://arxiv.org/abs/2103.14030) (Liu et al., 2021, Microsoft). It addresses two key challenges of applying self-attention to high-resolution images:
+
+1. **Quadratic complexity**: Standard self-attention scales quadratically with the number of tokens. Swin partitions the image into non-overlapping **local windows** and applies attention only within each window, reducing complexity to linear in image size.
+
+2. **Lack of cross-window connections**: Pure window attention has no information flow between windows. Swin alternates between regular window attention and **shifted window** attention in consecutive blocks, creating cross-window connectivity with minimal overhead.
+
+The result is a **hierarchical** feature representation (like a CNN), making it suitable as a general-purpose backbone for both classification and dense prediction tasks.
+
+---
+
+## Architecture Overview
+
+Swin Transformer processes images in four stages:
+
+1. **Patch partition + linear embedding**: A 4×4 non-overlapping patch partition maps the image to `(H/4, W/4, C)` feature tokens.
+2. **Stage 1–4**: Each stage consists of Swin Transformer blocks followed by a patch merging (downsampling) layer that halves the spatial resolution and doubles the channels.
+3. **Window Multi-head Self-Attention (W-MSA)**: Attention is computed within fixed local windows of size `window_size × window_size`.
+4. **Shifted Window MSA (SW-MSA)**: Alternating blocks shift the window partition by `(window_size//2, window_size//2)`, enabling cross-window information flow with a cyclic-shift masking mechanism.
+
+Relative position biases are added to all attention computations within each window.
+
+---
+
+## Model Variants
+
+<Tabs>
+  <Tab title="Swin V1">
+    Standard Swin Transformer variants trained on ImageNet-1k and ImageNet-21k:
+
+    | Model | Embed Dim | Depths | Heads | Window | Image |
+    |-------|-----------|--------|-------|--------|-------|
+    | `swin_tiny_patch4_window7_224` | 96 | (2,2,6,2) | (3,6,12,24) | 7 | 224 |
+    | `swin_small_patch4_window7_224` | 96 | (2,2,18,2) | (3,6,12,24) | 7 | 224 |
+    | `swin_base_patch4_window7_224` | 128 | (2,2,18,2) | (4,8,16,32) | 7 | 224 |
+    | `swin_base_patch4_window12_384` | 128 | (2,2,18,2) | (4,8,16,32) | 12 | 384 |
+    | `swin_large_patch4_window7_224` | 192 | (2,2,18,2) | (6,12,24,48) | 7 | 224 |
+    | `swin_large_patch4_window12_384` | 192 | (2,2,18,2) | (6,12,24,48) | 12 | 384 |
+
+    Swin S3 (AutoFormerV2) variants with tuned stage depths:
+    - `swin_s3_tiny_224`
+    - `swin_s3_small_224`
+    - `swin_s3_base_224`
+  </Tab>
+  <Tab title="Swin V2">
+    [Swin Transformer V2](https://arxiv.org/abs/2111.09883) introduces:
+    - **Log-spaced continuous relative position bias** (instead of parameterized table) for flexible resolution transfer
+    - **Post-norm** (LayerNorm after each residual block) for more stable large-model training
+    - **Scaled cosine attention** to avoid attention score instability
+
+    | Model | Window | Image |
+    |-------|--------|-------|
+    | `swinv2_tiny_window16_256` | 16 | 256 |
+    | `swinv2_tiny_window8_256` | 8 | 256 |
+    | `swinv2_small_window16_256` | 16 | 256 |
+    | `swinv2_small_window8_256` | 8 | 256 |
+    | `swinv2_base_window16_256` | 16 | 256 |
+    | `swinv2_base_window8_256` | 8 | 256 |
+    | `swinv2_base_window12_192` | 12 | 192 |
+    | `swinv2_base_window12to16_192to256` | 16 | 256 (fine-tuned from 192) |
+    | `swinv2_base_window12to24_192to384` | 24 | 384 (fine-tuned from 192) |
+    | `swinv2_large_window12_192` | 12 | 192 |
+    | `swinv2_large_window12to16_192to256` | 16 | 256 |
+    | `swinv2_large_window12to24_192to384` | 24 | 384 |
+
+    `window12to16` and `window12to24` variants were pre-trained at 192px and fine-tuned at higher resolution.
+  </Tab>
+</Tabs>
+
+---
+
+## Key Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `img_size` | `int \| tuple` | `224` | Input image size. |
+| `patch_size` | `int` | `4` | Initial patch embedding stride. |
+| `in_chans` | `int` | `3` | Number of input channels. |
+| `num_classes` | `int` | `1000` | Number of output classes. |
+| `global_pool` | `str` | `'avg'` | Global pooling: `'avg'` or `''`. |
+| `embed_dim` | `int` | `96` | Embedding dimension at stage 1. |
+| `depths` | `tuple` | `(2,2,6,2)` | Number of Swin blocks per stage. |
+| `num_heads` | `tuple` | `(3,6,12,24)` | Attention heads per stage. |
+| `window_size` | `int \| tuple` | `7` | Local attention window size. |
+| `mlp_ratio` | `float` | `4.0` | MLP hidden dim ratio. |
+| `drop_rate` | `float` | `0.0` | Dropout rate. |
+| `attn_drop_rate` | `float` | `0.0` | Attention dropout rate. |
+| `drop_path_rate` | `float` | `0.1` | Stochastic depth rate. |
+
+<Note>
+The window size must evenly divide the feature map at each stage. For `swin_*_window7_224`, the feature map sizes at each stage are 56×56, 28×28, 14×14, and 7×7 — all divisible by 7. Using `img_size=384` requires `window_size=12` (since 96/12=8 not 56/7=8, hence `window12_384` variants).
+</Note>
+
+---
+
+## Code Examples
+
+<AccordionGroup>
+  <Accordion title="Basic classification">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model(
+        'swin_tiny_patch4_window7_224',
+        pretrained=True,
+    )
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        output = model(x)
+
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="Swin-Base for transfer learning">
+    ```python
+    import timm
+
+    model = timm.create_model(
+        'swin_base_patch4_window7_224',
+        pretrained=True,
+        num_classes=200,  # fine-tune on 200 classes
+        drop_path_rate=0.2,
+    )
+    ```
+  </Accordion>
+  <Accordion title="SwinV2 at high resolution">
+    ```python
+    import timm
+    import torch
+
+    # Load SwinV2-Base pre-trained at 192, fine-tuned at 256
+    model = timm.create_model(
+        'swinv2_base_window12to16_192to256',
+        pretrained=True,
+    )
+    model.eval()
+
+    x = torch.randn(1, 3, 256, 256)
+    with torch.no_grad():
+        output = model(x)
+
+    print(output.shape)  # torch.Size([1, 1000])
+    ```
+  </Accordion>
+  <Accordion title="Feature extraction as a backbone">
+    ```python
+    import timm
+    import torch
+
+    model = timm.create_model(
+        'swin_small_patch4_window7_224',
+        pretrained=True,
+        features_only=True,
+    )
+    model.eval()
+
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        features = model(x)
+
+    for i, f in enumerate(features):
+        print(f'Stage {i}: {f.shape}')
+    # Stage 0: torch.Size([1, 56, 56, 96])   (NHWC format)
+    # Stage 1: torch.Size([1, 28, 28, 192])
+    # Stage 2: torch.Size([1, 14, 14, 384])
+    # Stage 3: torch.Size([1, 7, 7, 768])
+    ```
+
+    <Note>
+    Swin outputs feature maps in `NHWC` (channels-last) format rather than `NCHW`. Convert with `.permute(0, 3, 1, 2)` if needed.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+For dense prediction tasks (detection, segmentation), use Swin as a backbone with `features_only=True` and connect the multi-scale feature maps to a decoder. The hierarchical feature maps (4 stages at 4×, 8×, 16×, 32× strides) are compatible with FPN-style decoders.
+</Tip>

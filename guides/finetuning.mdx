@@ -1,0 +1,188 @@
+---
+title: "Fine-tuning Models"
+description: "Fine-tune pretrained timm models on custom datasets by replacing the classifier head, resetting it, or freezing the backbone."
+---
+
+`timm` makes it straightforward to adapt pretrained models to new tasks. The most common workflows are:
+
+- Replacing the classifier head at creation time
+- Resetting the head after the model is already loaded
+- Freezing the backbone and only training the new head
+
+All workflows start from `timm.create_model()`.
+
+---
+
+## Load a pretrained model with a new head
+
+Pass `pretrained=True` to load ImageNet weights, and `num_classes=N` to replace the classifier with a fresh linear layer sized for your dataset. The pretrained backbone weights are preserved; only the head is re-initialized.
+
+```python
+import timm
+
+# 4-class classifier built on a pretrained ResNet-18 backbone
+model = timm.create_model('resnet18', pretrained=True, num_classes=4)
+print(model.num_classes)
+# 4
+```
+
+The `create_model` signature relevant to fine-tuning:
+
+```python
+timm.create_model(
+    model_name,          # e.g. 'resnet50', 'vit_base_patch16_224'
+    pretrained=True,     # load pretrained ImageNet weights
+    num_classes=N,       # replace head with N-class linear layer
+    drop_rate=0.0,       # classifier dropout rate
+    drop_path_rate=0.0,  # stochastic depth drop rate
+    global_pool='avg',   # pooling type before the classifier
+)
+```
+
+<Note>
+Pretrained weights are loaded before the head is replaced, so the backbone receives correct initialization regardless of your target class count.
+</Note>
+
+---
+
+## Reset the classifier on an existing model
+
+If you already have a model loaded (e.g. from a checkpoint), use `reset_classifier()` to swap the head without recreating the entire model.
+
+```python
+import timm
+
+model = timm.create_model('mobilenetv3_large_100', pretrained=True)
+print(model.num_classes)
+# 1000
+
+# Replace with a 10-class head, keeping global average pooling
+model.reset_classifier(num_classes=10)
+print(model.num_classes)
+# 10
+```
+
+To also change (or remove) pooling, pass the `global_pool` argument:
+
+```python
+# Remove pooling and classifier entirely (returns spatial features)
+model.reset_classifier(num_classes=0, global_pool='')
+
+# Remove only the classifier, keep avg pooling (returns pooled embedding)
+model.reset_classifier(num_classes=0)
+```
+
+---
+
+## Fine-tuning workflow
+
+<Steps>
+  <Step title="Create a pretrained model with the correct number of output classes">
+    ```python
+    import torch
+    import timm
+
+    model = timm.create_model('resnet50', pretrained=True, num_classes=10)
+    model = model.cuda()
+    ```
+  </Step>
+
+  <Step title="Set up a loss function and optimizer">
+    Use `SoftTargetCrossEntropy` if you plan to use MixUp/CutMix label mixing, otherwise standard `CrossEntropyLoss` works.
+
+    ```python
+    import torch.nn as nn
+    from torch.optim import AdamW
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
+    ```
+  </Step>
+
+  <Step title="Train on your data">
+    ```python
+    model.train()
+    for images, labels in train_loader:
+        images, labels = images.cuda(), labels.cuda()
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Freeze the backbone
+
+To train only the new head and leave backbone weights frozen, set `requires_grad=False` on everything except the classifier. This is especially useful when you have a small dataset or limited compute.
+
+```python
+import timm
+
+model = timm.create_model('efficientnet_b0', pretrained=True, num_classes=5)
+
+# Freeze all parameters
+for param in model.parameters():
+    param.requires_grad = False
+
+# Unfreeze only the classifier head
+for param in model.get_classifier().parameters():
+    param.requires_grad = True
+
+# Verify
+trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+total = sum(p.numel() for p in model.parameters())
+print(f'Trainable: {trainable:,} / {total:,}')
+```
+
+<Tip>
+`model.get_classifier()` returns the final linear layer regardless of the model architecture. Use it to reliably target just the head without knowing its internal name.
+</Tip>
+
+---
+
+## Progressive unfreezing
+
+For better accuracy, you can unfreeze the backbone in stages after the head has converged:
+
+```python
+import timm
+
+model = timm.create_model('resnet50', pretrained=True, num_classes=10)
+
+# Phase 1: train head only
+for param in model.parameters():
+    param.requires_grad = False
+for param in model.get_classifier().parameters():
+    param.requires_grad = True
+
+# ... train for a few epochs ...
+
+# Phase 2: unfreeze entire model
+for param in model.parameters():
+    param.requires_grad = True
+
+# ... continue training at a lower LR ...
+```
+
+---
+
+## Verify output shapes before training
+
+It is good practice to do a quick forward pass with dummy data before starting a training run:
+
+```python
+import torch
+import timm
+
+model = timm.create_model('vit_base_patch16_224', pretrained=True, num_classes=10)
+model.eval()
+
+with torch.no_grad():
+    dummy = torch.randn(2, 3, 224, 224)
+    out = model(dummy)
+    print(out.shape)  # torch.Size([2, 10])
+```

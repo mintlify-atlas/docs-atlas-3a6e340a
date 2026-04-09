@@ -1,0 +1,125 @@
+---
+title: "Model Overview"
+description: "Browse and load from 700+ pretrained models across dozens of architecture families in timm."
+---
+
+`timm` (PyTorch Image Models) is a collection of image models, layers, utilities, optimizers, schedulers, and data-loaders. It includes 700+ pretrained models spanning classic CNNs, modern convolutional architectures, and Vision Transformers.
+
+Model weights originate from three sources:
+- Original author releases
+- Ports from TensorFlow or JAX implementations
+- Models trained from scratch using timm's training scripts
+
+<CardGroup cols={2}>
+  <Card title="Vision Transformer (ViT)" icon="grid-2" href="/models/vision-transformer">
+    Pure transformer models that split images into patches. Includes ViT-Tiny through ViT-Huge, DINOv2, CLIP, and register token variants.
+  </Card>
+  <Card title="EfficientNet" icon="bolt" href="/models/efficientnet">
+    Compound-scaled CNN family covering EfficientNet B0–B8, EfficientNet-V2 S/M/L/XL, and MixNet variants.
+  </Card>
+  <Card title="ResNet" icon="diagram-project" href="/models/resnet">
+    The foundational residual network family: ResNet-18 to ResNet-200, ResNeXt, Wide ResNet, and SE-ResNet variants.
+  </Card>
+  <Card title="ConvNeXt" icon="layer-group" href="/models/convnext">
+    A modernized pure-CNN architecture. Includes ConvNeXt Tiny through XXLarge and the ConvNeXt V2 series.
+  </Card>
+  <Card title="Swin Transformer" icon="table-cells" href="/models/swin-transformer">
+    Hierarchical vision transformer with shifted-window attention. Covers Swin-Tiny through Swin-Large and SwinV2.
+  </Card>
+  <Card title="Mobile Networks" icon="mobile" href="/models/mobile-nets">
+    Lightweight architectures for mobile and edge devices: MobileNetV3, MobileNetV4, and EfficientViT.
+  </Card>
+</CardGroup>
+
+---
+
+## Discovering Models
+
+### List all available models
+
+```python
+import timm
+
+# List every registered model name
+all_models = timm.list_models()
+print(len(all_models))  # 700+
+```
+
+### Filter by name pattern
+
+```python
+# Wildcard search for ResNet variants
+resnet_models = timm.list_models('*resnet*')
+
+# Find all EfficientNet-V2 models
+v2_models = timm.list_models('efficientnetv2_*')
+
+# Find all pretrained ViT models
+pretrained_vits = timm.list_models('vit_*', pretrained=True)
+```
+
+### List only pretrained models
+
+```python
+# All models with at least one pretrained weight set
+pretrained = timm.list_models(pretrained=True)
+```
+
+---
+
+## Loading a Model
+
+Use `timm.create_model` to instantiate any model by name:
+
+```python
+import timm
+
+# Load with pretrained ImageNet-1k weights
+model = timm.create_model('resnet50', pretrained=True)
+model.eval()
+
+# Load with a custom number of output classes
+model = timm.create_model('efficientnet_b0', pretrained=True, num_classes=10)
+
+# Load from Hugging Face Hub
+model = timm.create_model(
+    'hf-hub:timm/vit_base_patch16_224.augreg_in21k_ft_in1k',
+    pretrained=True,
+)
+
+# Load with a specific pretrained tag
+model = timm.create_model(
+    'vit_small_patch14_dinov2.lvd142m',
+    pretrained=True,
+    cache_dir='/data/my-models',
+)
+```
+
+<Note>
+`**kwargs` passed to `create_model` are forwarded to the model class constructor. Common overrides include `num_classes`, `global_pool`, `drop_rate`, and `drop_path_rate`.
+</Note>
+
+---
+
+## Architecture Families
+
+| Family | Key Characteristics | Representative Models |
+|--------|--------------------|-----------------------|
+| Vision Transformer (ViT) | Patch embeddings + self-attention, no convolutions | `vit_base_patch16_224`, `vit_large_patch14_clip_224` |
+| EfficientNet | Compound scaling of depth/width/resolution, MBConv blocks | `efficientnet_b0`, `efficientnetv2_s`, `efficientnetv2_l` |
+| ResNet | Residual connections, bottleneck blocks, BatchNorm | `resnet50`, `resnext50_32x4d`, `wide_resnet50_2` |
+| ResNet-D | Avg-pool downsampling, larger stem, anti-aliasing | `resnet50d`, `resnet101d`, `resnet200d` |
+| SE-ResNet | Squeeze-and-Excitation channel attention on ResNet | `seresnet50`, `seresnext50_32x4d`, `seresnet152d` |
+| ConvNeXt | Depthwise conv, LayerNorm, GELU, inverted bottleneck | `convnext_tiny`, `convnext_base`, `convnext_xxlarge` |
+| ConvNeXt V2 | ConvNeXt + Global Response Normalization (GRN) | `convnextv2_tiny`, `convnextv2_base`, `convnextv2_huge` |
+| Swin Transformer | Shifted-window attention, hierarchical feature maps | `swin_tiny_patch4_window7_224`, `swin_large_patch4_window12_384` |
+| Swin V2 | Swin with log-spaced continuous position bias | `swinv2_tiny_window16_256`, `swinv2_base_window12to24_192to384` |
+| MobileNetV3 | Efficient head, hard-swish activation, SE blocks | `mobilenetv3_large_100`, `mobilenetv3_small_100` |
+| MobileNetV4 | Universal Inverted Bottleneck, hybrid attention | `mobilenetv4_conv_small`, `mobilenetv4_hybrid_large` |
+| EfficientViT (MIT) | Lightweight multi-scale linear attention | `efficientvit_b1`, `efficientvit_b3`, `efficientvit_l3` |
+| EfficientViT (MSRA) | Cascaded group attention for efficiency | `efficientvit_m0`, `efficientvit_m4`, `efficientvit_m5` |
+| DeiT | Data-efficient ViT with distillation token | `deit_small_patch16_224`, `deit_base_patch16_224` |
+| BEiT | BERT pre-training for ViT | `beit_base_patch16_224`, `beit_large_patch16_224` |
+| RegNet | Regularized networks designed via network design spaces | `regnetx_002`, `regnety_040`, `regnety_160` |
+| DenseNet | Dense skip connections between all layers | `densenet121`, `densenet201` |
+| MixNet | Mixed depthwise convolution kernels | `mixnet_s`, `mixnet_m`, `mixnet_l` |

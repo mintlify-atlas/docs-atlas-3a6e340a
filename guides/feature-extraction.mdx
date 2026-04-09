@@ -1,0 +1,282 @@
+---
+title: "Feature Extraction"
+description: "Use timm models as feature extractors — get pooled embeddings, unpooled hidden states, or multi-scale feature maps for downstream tasks."
+---
+
+All models in `timm` share consistent mechanisms for obtaining features for tasks beyond classification. This page covers three main approaches: penultimate-layer features (pooled and unpooled), multi-scale feature pyramids via `features_only=True`, and flexible intermediate extraction with `forward_intermediates()`.
+
+## Penultimate Layer Features
+
+The features from the layer immediately before the classifier can be extracted without modifying the model at all, or by permanently removing the head.
+
+<Tip>
+**Pooled vs. unpooled:** Unpooled features retain spatial information (e.g. `[B, C, H, W]` for convnets, `[B, N, D]` for ViTs) and are useful when you need spatial context. Pooled features collapse the spatial dimensions to a single vector per image (e.g. `[B, C]`) and are the most common input for downstream linear classifiers or MLP heads.
+</Tip>
+
+### Unpooled Features
+
+There are three ways to obtain unpooled (last hidden state) features. In `timm`, this refers to features up to and including the final normalization layer, but **excluding** pooling, class-token selection, and post-pooling layers.
+
+<AccordionGroup>
+  <Accordion title="Using forward_features()">
+    Call `model.forward_features(input)` on any model instead of the usual `model(input)`. This bypasses the classifier head and global pooling without modifying the model.
+
+    ```python
+    import torch
+    import timm
+
+    m = timm.create_model('xception41', pretrained=True)
+
+    o = m(torch.randn(2, 3, 299, 299))
+    print(f'Original shape: {o.shape}')
+    # Original shape: torch.Size([2, 1000])
+
+    o = m.forward_features(torch.randn(2, 3, 299, 299))
+    print(f'Unpooled shape: {o.shape}')
+    # Unpooled shape: torch.Size([2, 2048, 10, 10])
+    ```
+  </Accordion>
+
+  <Accordion title="Create model with no classifier and no pooling">
+    Pass `num_classes=0` and `global_pool=''` at creation time. The classifier and pooling parameters are removed from the model entirely.
+
+    ```python
+    import torch
+    import timm
+
+    m = timm.create_model('resnet50', pretrained=True, num_classes=0, global_pool='')
+    o = m(torch.randn(2, 3, 224, 224))
+    print(f'Unpooled shape: {o.shape}')
+    # Unpooled shape: torch.Size([2, 2048, 7, 7])
+    ```
+  </Accordion>
+
+  <Accordion title="Remove the head after creation">
+    Call `model.reset_classifier(0, '')` on an existing model to remove both pooling and the classifier.
+
+    ```python
+    import torch
+    import timm
+
+    m = timm.create_model('densenet121', pretrained=True)
+    o = m(torch.randn(2, 3, 224, 224))
+    print(f'Original shape: {o.shape}')
+    # Original shape: torch.Size([2, 1000])
+
+    m.reset_classifier(0, '')
+    o = m(torch.randn(2, 3, 224, 224))
+    print(f'Unpooled shape: {o.shape}')
+    # Unpooled shape: torch.Size([2, 1024, 7, 7])
+    ```
+  </Accordion>
+</AccordionGroup>
+
+#### Chaining unpooled output back to the classifier head
+
+The last hidden state returned by `forward_features()` can be fed back through the model's head using `forward_head()`. This is useful when you want to inspect the pre-head representation while still computing a classification output.
+
+```python
+import torch
+import timm
+
+model = timm.create_model('vit_medium_patch16_reg1_gap_256', pretrained=True)
+
+output = model.forward_features(torch.randn(2, 3, 256, 256))
+print('Unpooled output shape:', output.shape)
+# Unpooled output shape: torch.Size([2, 257, 512])
+
+classified = model.forward_head(output)
+print('Classification output shape:', classified.shape)
+# Classification output shape: torch.Size([2, 1000])
+```
+
+### Pooled Features
+
+To extract pooled embeddings (spatial dimensions collapsed), keep pooling in place and only remove the classifier.
+
+<AccordionGroup>
+  <Accordion title="Create model with no classifier">
+    Pass `num_classes=0` (without `global_pool=''`) to keep global average pooling but remove the linear head.
+
+    ```python
+    import torch
+    import timm
+
+    m = timm.create_model('resnet50', pretrained=True, num_classes=0)
+    o = m(torch.randn(2, 3, 224, 224))
+    print(f'Pooled shape: {o.shape}')
+    # Pooled shape: torch.Size([2, 2048])
+    ```
+  </Accordion>
+
+  <Accordion title="Remove only the classifier after creation">
+    Call `model.reset_classifier(0)` (without the second argument) to remove the linear layer but leave pooling intact.
+
+    ```python
+    import torch
+    import timm
+
+    m = timm.create_model('ese_vovnet19b_dw', pretrained=True)
+    o = m(torch.randn(2, 3, 224, 224))
+    print(f'Original shape: {o.shape}')
+    # Original shape: torch.Size([2, 1000])
+
+    m.reset_classifier(0)
+    o = m(torch.randn(2, 3, 224, 224))
+    print(f'Pooled shape: {o.shape}')
+    # Pooled shape: torch.Size([2, 1024])
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Multi-scale Feature Maps (Feature Pyramid)
+
+Object detection, segmentation, and dense prediction tasks require feature maps from multiple spatial scales. `timm` provides a unified interface for creating any supported model as a feature backbone via `features_only=True`.
+
+<Note>
+By default, most models with a feature hierarchy output up to 5 levels (up to a 32x reduction). Some models have fewer levels; ViT-style models default to the last 3 feature maps. Use `out_indices` to control which levels are returned.
+</Note>
+
+### Create a feature backbone
+
+```python
+import torch
+import timm
+
+m = timm.create_model('resnest26d', features_only=True, pretrained=True)
+o = m(torch.randn(2, 3, 224, 224))
+for x in o:
+    print(x.shape)
+```
+
+```text
+torch.Size([2, 64, 112, 112])
+torch.Size([2, 256, 56, 56])
+torch.Size([2, 512, 28, 28])
+torch.Size([2, 1024, 14, 14])
+torch.Size([2, 2048, 7, 7])
+```
+
+### Query feature metadata
+
+After creating a feature backbone, use the `.feature_info` attribute to inspect channel counts and spatial reductions without hardcoding constants.
+
+```python
+import torch
+import timm
+
+m = timm.create_model('regnety_032', features_only=True, pretrained=True)
+print(f'Feature channels: {m.feature_info.channels()}')
+
+o = m(torch.randn(2, 3, 224, 224))
+for x in o:
+    print(x.shape)
+```
+
+```text
+Feature channels: [32, 72, 216, 576, 1512]
+torch.Size([2, 32, 112, 112])
+torch.Size([2, 72, 56, 56])
+torch.Size([2, 216, 28, 28])
+torch.Size([2, 576, 14, 14])
+torch.Size([2, 1512, 7, 7])
+```
+
+### Select specific feature levels or limit output stride
+
+Two additional arguments control the feature output:
+
+- **`out_indices`** — selects which feature levels to return. Supports negative indexing (`-1` = last, `-2` = penultimate). Index-to-stride mapping is model-specific; consult `feature_info` to verify.
+- **`output_stride`** — limits the maximum spatial reduction using dilated convolutions. Not all models support values other than 32.
+
+```python
+import torch
+import timm
+
+m = timm.create_model(
+    'ecaresnet101d',
+    features_only=True,
+    output_stride=8,
+    out_indices=(2, 4),
+    pretrained=True,
+)
+print(f'Feature channels: {m.feature_info.channels()}')
+print(f'Feature reduction: {m.feature_info.reduction()}')
+
+o = m(torch.randn(2, 3, 320, 320))
+for x in o:
+    print(x.shape)
+```
+
+```text
+Feature channels: [512, 2048]
+Feature reduction: [8, 8]
+torch.Size([2, 512, 40, 40])
+torch.Size([2, 2048, 40, 40])
+```
+
+---
+
+## Flexible Intermediate Feature Extraction
+
+Many models support `forward_intermediates()` — a lower-level API that provides both intermediate feature maps and the final hidden state in a single call. It also supports model-specific extras such as class tokens and distillation tokens.
+
+<Info>
+In non-hierarchical block-based models such as ViT, `indices` selects individual transformer blocks. In hierarchical models, indices typically correspond to the stem output and each stage. Both positive and negative indices work; `None` returns all intermediates.
+</Info>
+
+### Extract all intermediates
+
+```python
+import torch
+import timm
+
+model = timm.create_model('vit_medium_patch16_reg1_gap_256', pretrained=True)
+output, intermediates = model.forward_intermediates(torch.randn(2, 3, 256, 256))
+for i, o in enumerate(intermediates):
+    print(f'Feat index: {i}, shape: {o.shape}')
+```
+
+```text
+Feat index: 0, shape: torch.Size([2, 512, 16, 16])
+Feat index: 1, shape: torch.Size([2, 512, 16, 16])
+Feat index: 2, shape: torch.Size([2, 512, 16, 16])
+Feat index: 3, shape: torch.Size([2, 512, 16, 16])
+Feat index: 4, shape: torch.Size([2, 512, 16, 16])
+Feat index: 5, shape: torch.Size([2, 512, 16, 16])
+Feat index: 6, shape: torch.Size([2, 512, 16, 16])
+Feat index: 7, shape: torch.Size([2, 512, 16, 16])
+Feat index: 8, shape: torch.Size([2, 512, 16, 16])
+Feat index: 9, shape: torch.Size([2, 512, 16, 16])
+Feat index: 10, shape: torch.Size([2, 512, 16, 16])
+Feat index: 11, shape: torch.Size([2, 512, 16, 16])
+```
+
+### Prune the model and extract a specific intermediate
+
+`prune_intermediate_layers()` removes trailing blocks, the head, and/or the final norm from the model to reduce parameter count when only early features are needed. It returns the converted (absolute) indices to pass back to `forward_intermediates()`.
+
+```python
+import torch
+import timm
+
+model = timm.create_model('vit_medium_patch16_reg1_gap_256', pretrained=True)
+print('Original params:', sum([p.numel() for p in model.parameters()]))
+# Original params: 38880232
+
+# Prune head, norm, and last block; keep penultimate intermediate
+indices = model.prune_intermediate_layers(indices=(-2,), prune_head=True, prune_norm=True)
+print('Pruned params:', sum([p.numel() for p in model.parameters()]))
+# Pruned params: 35212800
+
+intermediates = model.forward_intermediates(
+    torch.randn(2, 3, 256, 256),
+    indices=indices,
+    intermediates_only=True,
+)
+for o in intermediates:
+    print(f'Feat shape: {o.shape}')
+# Feat shape: torch.Size([2, 512, 16, 16])
+```

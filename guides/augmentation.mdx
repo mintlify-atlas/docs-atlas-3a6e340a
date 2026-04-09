@@ -1,0 +1,261 @@
+---
+title: "Data Augmentation"
+description: "Configure timm's augmentation pipeline with create_transform(), RandAugment, AugMix, MixUp, CutMix, and Random Erasing."
+---
+
+`timm` provides a rich set of data augmentation primitives, all wired together through `create_transform()` in `timm.data`. Augmentation can be configured through the transform factory for standard pipelines, or composed manually for custom workflows.
+
+---
+
+## create_transform()
+
+`create_transform()` is the primary entry point for building image transform pipelines. It returns a composed `torchvision.transforms` pipeline suitable for either training or inference.
+
+```python
+from timm.data import create_transform
+
+# Training pipeline with RandAugment and Random Erasing
+transform = create_transform(
+    input_size=224,
+    is_training=True,
+    auto_augment='rand-m9-mstd0.5',
+    re_prob=0.25,
+    re_mode='pixel',
+    re_count=1,
+)
+
+# Inference pipeline
+val_transform = create_transform(
+    input_size=224,
+    is_training=False,
+    crop_pct=0.875,
+)
+```
+
+### Key parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `input_size` | `int` or `tuple` | `224` | Target input size (H×W), or `(C, H, W)` tuple |
+| `is_training` | `bool` | `False` | Return training (random) transforms when `True` |
+| `no_aug` | `bool` | `False` | Disable augmentation during training (useful for debugging) |
+| `hflip` | `float` | `0.5` | Horizontal flip probability |
+| `vflip` | `float` | `0.0` | Vertical flip probability |
+| `color_jitter` | `float` or `tuple` | `0.4` | Color jitter strength (brightness, contrast, saturation); scalar applies to all three |
+| `auto_augment` | `str` | `None` | AutoAugment/RandAugment/AugMix config string |
+| `interpolation` | `str` | `'bilinear'` | Resize interpolation mode |
+| `mean` | `tuple` | ImageNet mean | Normalization mean per channel |
+| `std` | `tuple` | ImageNet std | Normalization std per channel |
+| `re_prob` | `float` | `0.0` | Random erasing probability |
+| `re_mode` | `str` | `'const'` | Random erasing fill mode (`'const'`, `'rand'`, `'pixel'`) |
+| `re_count` | `int` | `1` | Maximum number of random erasing regions |
+| `crop_pct` | `float` | `None` | Inference crop fraction (defaults to 0.875) |
+| `crop_mode` | `str` | `None` | Inference crop mode (`'squash'`, `'border'`, `'center'`) |
+| `separate` | `bool` | `False` | Return 3-stage tuple (primary, secondary, final) for AugMix |
+
+<Note>
+When `auto_augment` is set, color jitter is automatically disabled (it is generally redundant alongside RandAugment). Pass `force_color_jitter=True` to override this behaviour.
+</Note>
+
+---
+
+## RandAugment
+
+RandAugment is configured via the `auto_augment` string argument, which starts with `rand`. The string encodes the number of operations (`n`), magnitude (`m`), and optional standard deviation (`mstd`) using key-value pairs.
+
+```python
+from timm.data import create_transform
+
+# RandAugment: 9 magnitude, 0.5 magnitude std, include increasing severity ops
+transform = create_transform(
+    input_size=224,
+    is_training=True,
+    auto_augment='rand-m9-mstd0.5-inc1',
+)
+```
+
+Common RandAugment config strings:
+
+| String | Description |
+|--------|-------------|
+| `rand-m9-mstd0.5` | Magnitude 9, std dev 0.5 |
+| `rand-m9-mstd0.5-inc1` | Magnitude 9, std 0.5, increasing severity |
+| `rand-m7-mstd0.5-inc1` | Magnitude 7 (lighter augmentation) |
+
+You can also call the transform function directly for lower-level control:
+
+```python
+from timm.data.auto_augment import rand_augment_transform
+
+aa_params = dict(
+    translate_const=100,
+    img_mean=(124, 116, 104),
+)
+transform = rand_augment_transform('rand-m9-mstd0.5', aa_params)
+```
+
+---
+
+## AugMix
+
+AugMix mixes multiple augmented views of each image to improve robustness. Use the `augmix` prefix in the `auto_augment` string. When using AugMix with JSD loss, set `separate=True` to get the three required branches (clean + 2 augmented) as separate transforms.
+
+```python
+from timm.data import create_transform
+
+# AugMix transform — returns a 3-tuple when separate=True
+primary_tfl, secondary_tfl, final_tfl = create_transform(
+    input_size=224,
+    is_training=True,
+    auto_augment='augmix-m5',
+    separate=True,
+)
+```
+
+The three transforms are used by `AugMixDataset` to produce three views per image for JSD loss computation. The training script handles this with `--aug-splits 3 --jsd`.
+
+```bash
+./distributed_train.sh 2 \
+  --data-dir /imagenet \
+  --model resnet50 \
+  --aug-splits 3 \
+  --aa augmix-m5 \
+  --jsd \
+  --split-bn
+```
+
+---
+
+## MixUp and CutMix
+
+`timm.data.Mixup` applies MixUp, CutMix, or a random combination of both at the batch level. It also handles soft label generation with optional label smoothing.
+
+```python
+from timm.data import Mixup
+
+mixup_fn = Mixup(
+    mixup_alpha=0.8,       # Beta distribution alpha for mixup; 0 disables mixup
+    cutmix_alpha=1.0,      # Beta distribution alpha for cutmix; 0 disables cutmix
+    cutmix_minmax=None,    # Min/max bbox ratio alternative to alpha
+    prob=1.0,              # Probability of applying mix per batch
+    switch_prob=0.5,       # Probability of switching to cutmix when both are active
+    mode='batch',          # Apply params per 'batch', 'pair', or 'elem'
+    correct_lam=True,      # Correct lambda for clipped cutmix bbox
+    label_smoothing=0.1,   # Label smoothing applied to mixed targets
+    num_classes=1000,      # Number of output classes
+)
+```
+
+Apply `mixup_fn` inside your training loop after loading the batch:
+
+```python
+for images, labels in train_loader:
+    images, labels = images.cuda(), labels.cuda()
+    images, labels = mixup_fn(images, labels)  # labels become soft targets
+    outputs = model(images)
+    loss = criterion(outputs, labels)  # use SoftTargetCrossEntropy
+    loss.backward()
+    optimizer.step()
+```
+
+<Warning>
+When using `Mixup`, the returned `labels` tensor contains soft (mixed) targets — not integer class indices. You must use a loss function that accepts soft targets, such as `timm.loss.SoftTargetCrossEntropy`.
+</Warning>
+
+### Mixup vs. CutMix
+
+| | MixUp | CutMix |
+|-|-------|--------|
+| How images are mixed | Linear interpolation of pixel values | Rectangular region of one image pasted into another |
+| Label mixing | Weighted average of one-hot labels | Weighted average proportional to patch area |
+| Controlled by | `mixup_alpha` | `cutmix_alpha` |
+
+Set `mixup_alpha > 0` and `cutmix_alpha > 0` simultaneously to use both; `switch_prob` controls how often CutMix is chosen over MixUp.
+
+---
+
+## Random Erasing
+
+`RandomErasing` randomly selects a rectangular region in each image and replaces its pixels with a constant, random-channel, or per-pixel random value. It is applied **after** normalization as a tensor transform.
+
+```python
+from timm.data.random_erasing import RandomErasing
+
+erasing = RandomErasing(
+    probability=0.25,   # Probability the operation is applied
+    min_area=0.02,      # Minimum erased area as fraction of image area
+    max_area=1/3,       # Maximum erased area as fraction of image area
+    min_aspect=0.3,     # Minimum aspect ratio of erased region
+    mode='pixel',       # Fill mode: 'const' (zeros), 'rand' (per-channel), 'pixel' (per-pixel)
+    max_count=1,        # Max number of erasing regions per image
+    device='cpu',
+)
+```
+
+Random Erasing is integrated into `create_transform()` via `re_prob`, `re_mode`, and `re_count`:
+
+```python
+from timm.data import create_transform
+
+transform = create_transform(
+    input_size=224,
+    is_training=True,
+    re_prob=0.25,      # apply with 25% probability
+    re_mode='pixel',   # per-pixel random fill
+    re_count=1,        # erase up to 1 region
+)
+```
+
+### Fill modes
+
+| Mode | Erased pixels set to |
+|------|----------------------|
+| `'const'` | Zero (black after normalization) |
+| `'rand'` | Per-channel random normal value (same value for all spatial positions) |
+| `'pixel'` | Per-pixel random normal value |
+
+---
+
+## Putting it all together
+
+A complete training pipeline with RandAugment, MixUp/CutMix, and Random Erasing:
+
+```python
+import torch
+import timm
+from timm.data import create_transform, Mixup
+from timm.loss import SoftTargetCrossEntropy
+
+# 1. Build transforms
+train_transform = create_transform(
+    input_size=224,
+    is_training=True,
+    auto_augment='rand-m9-mstd0.5-inc1',
+    re_prob=0.25,
+    re_mode='pixel',
+)
+
+# 2. Mixup / CutMix
+mixup_fn = Mixup(
+    mixup_alpha=0.8,
+    cutmix_alpha=1.0,
+    prob=1.0,
+    switch_prob=0.5,
+    label_smoothing=0.1,
+    num_classes=1000,
+)
+
+# 3. Model and loss
+model = timm.create_model('resnet50', pretrained=True).cuda()
+criterion = SoftTargetCrossEntropy()
+
+# 4. Training step
+model.train()
+for images, labels in train_loader:
+    images, labels = images.cuda(), labels.cuda()
+    images, labels = mixup_fn(images, labels)
+    loss = criterion(model(images), labels)
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+```

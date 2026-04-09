@@ -1,0 +1,542 @@
+---
+title: "Schedulers API"
+description: "Reference documentation for timm learning rate scheduler factory functions and scheduler classes."
+---
+
+The `timm.scheduler` package provides learning rate schedulers with warmup, noise injection, and cosine restart support. All schedulers are subclasses of the timm `Scheduler` base class, which supports both epoch-based and update-based stepping via the `t_in_epochs` / `step_on_epochs` flags.
+
+---
+
+## timm.scheduler.create_scheduler_v2
+
+```python
+timm.scheduler.create_scheduler_v2(
+    optimizer,
+    sched='cosine',
+    num_epochs=300,
+    decay_epochs=90,
+    decay_milestones=(90, 180, 270),
+    cooldown_epochs=0,
+    patience_epochs=10,
+    decay_rate=0.1,
+    min_lr=0.,
+    warmup_lr=1e-5,
+    warmup_epochs=0,
+    warmup_prefix=False,
+    noise=None,
+    noise_pct=0.67,
+    noise_std=1.,
+    noise_seed=42,
+    cycle_mul=1.,
+    cycle_decay=0.1,
+    cycle_limit=1,
+    k_decay=1.0,
+    plateau_mode='max',
+    step_on_epochs=True,
+    updates_per_epoch=0,
+)
+```
+
+The primary scheduler factory. Creates a scheduler instance and returns it along with the effective total number of training epochs (which may differ from `num_epochs` when using cyclic schedulers with multiple cycles or warmup prefix).
+
+<CodeGroup>
+```python Cosine schedule with warmup
+import timm
+from timm.optim import create_optimizer_v2
+from timm.scheduler import create_scheduler_v2
+
+model = timm.create_model('resnet50')
+optimizer = create_optimizer_v2(model, opt='adamw', lr=1e-3)
+
+scheduler, num_epochs = create_scheduler_v2(
+    optimizer,
+    sched='cosine',
+    num_epochs=300,
+    warmup_epochs=5,
+    warmup_lr=1e-6,
+    min_lr=1e-6,
+)
+print(num_epochs)  # 300 (or 305 if warmup_prefix=True)
+
+# Training loop
+for epoch in range(num_epochs):
+    train_one_epoch(model, optimizer, loader)
+    scheduler.step(epoch + 1)
+```
+
+```python Update-based stepping (per-batch)
+from timm.scheduler import create_scheduler_v2
+
+updates_per_epoch = len(train_loader)
+
+scheduler, num_epochs = create_scheduler_v2(
+    optimizer,
+    sched='cosine',
+    num_epochs=300,
+    warmup_epochs=5,
+    step_on_epochs=False,
+    updates_per_epoch=updates_per_epoch,
+)
+
+# Training loop
+num_updates = 0
+for epoch in range(num_epochs):
+    for batch in train_loader:
+        optimizer.zero_grad()
+        loss = compute_loss(batch)
+        loss.backward()
+        optimizer.step()
+        num_updates += 1
+        scheduler.step_update(num_updates)
+```
+
+```python Cosine with restarts
+from timm.scheduler import create_scheduler_v2
+
+# 3 cosine cycles, each decaying to 10% of prior max LR
+scheduler, num_epochs = create_scheduler_v2(
+    optimizer,
+    sched='cosine',
+    num_epochs=300,
+    cycle_limit=3,
+    cycle_decay=0.1,
+)
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="optimizer" type="torch.optim.Optimizer" required>
+  The optimizer instance whose learning rate will be scheduled.
+</ParamField>
+
+<ParamField path="sched" type="str" default="'cosine'">
+  Scheduler type. One of: `'cosine'`, `'tanh'`, `'step'`, `'multistep'`, `'plateau'`, `'poly'`.
+</ParamField>
+
+<ParamField path="num_epochs" type="int" default="300">
+  Total number of training epochs.
+</ParamField>
+
+<ParamField path="decay_epochs" type="int" default="90">
+  Number of epochs between LR decay steps. Used by the `'step'` scheduler.
+</ParamField>
+
+<ParamField path="decay_milestones" type="list[int]" default="(90, 180, 270)">
+  List of epoch milestones at which to decay the LR. Used by the `'multistep'` scheduler.
+</ParamField>
+
+<ParamField path="cooldown_epochs" type="int" default="0">
+  Number of epochs to hold the minimum LR after the main schedule completes.
+</ParamField>
+
+<ParamField path="patience_epochs" type="int" default="10">
+  Number of epochs to wait before decaying LR when no improvement is seen. Used by the `'plateau'` scheduler.
+</ParamField>
+
+<ParamField path="decay_rate" type="float" default="0.1">
+  Multiplicative LR decay factor (e.g. `0.1` means LR is multiplied by `0.1` at each decay event). For the `'poly'` scheduler, this value is used as the polynomial `power`.
+</ParamField>
+
+<ParamField path="min_lr" type="float" default="0.">
+  Minimum learning rate. The scheduler will not reduce LR below this value.
+</ParamField>
+
+<ParamField path="warmup_lr" type="float" default="1e-5">
+  Initial learning rate at the start of the warmup phase.
+</ParamField>
+
+<ParamField path="warmup_epochs" type="int" default="0">
+  Number of warmup epochs. During warmup, LR linearly increases from `warmup_lr` to the base LR.
+</ParamField>
+
+<ParamField path="warmup_prefix" type="bool" default="False">
+  If `True`, warmup epochs are *added* to `num_epochs` rather than counted within it.
+</ParamField>
+
+<ParamField path="noise" type="float | list[float] | None" default="None">
+  Add LR noise during training. A scalar specifies the epoch fraction during which noise is applied; a list specifies a `[start, end]` range (as fractions of total epochs).
+</ParamField>
+
+<ParamField path="cycle_mul" type="float" default="1.">
+  Cycle length multiplier for cyclic schedulers (`'cosine'`, `'tanh'`, `'poly'`). `1.0` means constant cycle length; `> 1.0` extends each successive cycle.
+</ParamField>
+
+<ParamField path="cycle_decay" type="float" default="0.1">
+  Multiplicative factor applied to the peak LR at the start of each new cycle.
+</ParamField>
+
+<ParamField path="cycle_limit" type="int" default="1">
+  Maximum number of cycles for cyclic schedulers.
+</ParamField>
+
+<ParamField path="k_decay" type="float" default="1.0">
+  k-decay exponent from [k-decay paper](https://arxiv.org/abs/2004.05909). Values `< 1` concentrate LR decay toward the end of the cycle. Used by `'cosine'` and `'poly'` schedulers.
+</ParamField>
+
+<ParamField path="plateau_mode" type="str" default="'max'">
+  For the `'plateau'` scheduler: `'max'` to track a metric that should increase (e.g. accuracy), `'min'` for one that should decrease (e.g. loss).
+</ParamField>
+
+<ParamField path="step_on_epochs" type="bool" default="True">
+  If `True`, step the scheduler once per epoch. If `False`, step per optimizer update (batch). Requires `updates_per_epoch > 0` when `False`.
+</ParamField>
+
+<ParamField path="updates_per_epoch" type="int" default="0">
+  Number of optimizer updates per epoch. Required when `step_on_epochs=False`.
+</ParamField>
+
+### Returns
+
+`tuple[Scheduler, int]` — The scheduler instance and the effective total number of training epochs.
+
+---
+
+## Scheduler Classes
+
+### CosineLRScheduler
+
+```python
+timm.scheduler.CosineLRScheduler(
+    optimizer,
+    t_initial,
+    lr_min=0.,
+    cycle_mul=1.,
+    cycle_decay=1.,
+    cycle_limit=1,
+    warmup_t=0,
+    warmup_lr_init=0.,
+    warmup_prefix=False,
+    t_in_epochs=True,
+    noise_range_t=None,
+    noise_pct=0.67,
+    noise_std=1.0,
+    noise_seed=42,
+    k_decay=1.0,
+    initialize=True,
+)
+```
+
+Cosine annealing with optional warm restarts, warmup, noise injection, and k-decay. Based on [SGDR: Stochastic Gradient Descent with Warm Restarts](https://arxiv.org/abs/1608.03983) with the k-decay extension from [k-decay: A New Method For Learning Rate Schedule](https://arxiv.org/abs/2004.05909).
+
+<ParamField path="t_initial" type="int" required>
+  Number of epochs (or updates) in the first cycle.
+</ParamField>
+
+<ParamField path="lr_min" type="float" default="0.">
+  Minimum learning rate at the trough of the cosine curve.
+</ParamField>
+
+<ParamField path="cycle_mul" type="float" default="1.">
+  Factor by which cycle length is multiplied after each restart. `1.0` = constant-length cycles.
+</ParamField>
+
+<ParamField path="cycle_decay" type="float" default="1.">
+  Multiplicative factor applied to the maximum LR at the start of each new cycle.
+</ParamField>
+
+<ParamField path="cycle_limit" type="int" default="1">
+  Maximum number of cycles. After this many cycles the LR is held at `lr_min`.
+</ParamField>
+
+<ParamField path="warmup_t" type="int" default="0">
+  Number of warmup steps/epochs.
+</ParamField>
+
+<ParamField path="warmup_lr_init" type="float" default="0.">
+  Initial LR for the warmup phase.
+</ParamField>
+
+<ParamField path="k_decay" type="float" default="1.0">
+  k-decay exponent. Values `< 1.0` concentrate the decay toward the end of each cycle.
+</ParamField>
+
+<ParamField path="t_in_epochs" type="bool" default="True">
+  If `True`, `t` counts epochs. If `False`, `t` counts optimizer updates.
+</ParamField>
+
+---
+
+### MultiStepLRScheduler
+
+```python
+timm.scheduler.MultiStepLRScheduler(
+    optimizer,
+    decay_t,
+    decay_rate=1.,
+    warmup_t=0,
+    warmup_lr_init=0.,
+    warmup_prefix=True,
+    t_in_epochs=True,
+    noise_range_t=None,
+    noise_pct=0.67,
+    noise_std=1.0,
+    noise_seed=42,
+    initialize=True,
+)
+```
+
+Decays the learning rate by `decay_rate` at each milestone in `decay_t`. Equivalent to PyTorch's `MultiStepLR` with warmup and noise support.
+
+<ParamField path="decay_t" type="list[int]" required>
+  List of epoch (or update) milestones at which the LR is multiplied by `decay_rate`.
+</ParamField>
+
+<ParamField path="decay_rate" type="float" default="1.">
+  Multiplicative LR decay factor applied at each milestone.
+</ParamField>
+
+<ParamField path="warmup_t" type="int" default="0">
+  Number of warmup steps/epochs.
+</ParamField>
+
+<ParamField path="warmup_lr_init" type="float" default="0.">
+  Initial LR during the warmup phase.
+</ParamField>
+
+---
+
+### PlateauLRScheduler
+
+```python
+timm.scheduler.PlateauLRScheduler(
+    optimizer,
+    decay_rate=0.1,
+    patience_t=10,
+    threshold=1e-4,
+    cooldown_t=0,
+    warmup_t=0,
+    warmup_lr_init=0.,
+    lr_min=0.,
+    mode='max',
+    noise_range_t=None,
+    noise_pct=0.67,
+    noise_std=1.0,
+    noise_seed=None,
+    initialize=True,
+)
+```
+
+Reduces LR when a tracked metric stops improving. Wraps `torch.optim.lr_scheduler.ReduceLROnPlateau` with warmup and noise support. Unlike the other schedulers, `PlateauLRScheduler` only supports epoch-based stepping.
+
+<ParamField path="decay_rate" type="float" default="0.1">
+  Multiplicative LR factor applied when a plateau is detected.
+</ParamField>
+
+<ParamField path="patience_t" type="int" default="10">
+  Number of epochs with no improvement before triggering a decay.
+</ParamField>
+
+<ParamField path="threshold" type="float" default="1e-4">
+  Minimum change in monitored metric to count as an improvement.
+</ParamField>
+
+<ParamField path="cooldown_t" type="int" default="0">
+  Number of epochs to wait before resuming normal operation after a decay.
+</ParamField>
+
+<ParamField path="lr_min" type="float" default="0.">
+  Minimum learning rate.
+</ParamField>
+
+<ParamField path="mode" type="str" default="'max'">
+  `'max'` if the metric should increase (accuracy), `'min'` if it should decrease (loss).
+</ParamField>
+
+<Note>
+  Call `scheduler.step(metric_value)` for `PlateauLRScheduler`, passing the metric you want to monitor (unlike the other schedulers that take the epoch/step count).
+</Note>
+
+---
+
+### PolyLRScheduler
+
+```python
+timm.scheduler.PolyLRScheduler(
+    optimizer,
+    t_initial,
+    power=0.5,
+    lr_min=0.,
+    cycle_mul=1.,
+    cycle_decay=1.,
+    cycle_limit=1,
+    warmup_t=0,
+    warmup_lr_init=0.,
+    warmup_prefix=False,
+    t_in_epochs=True,
+    noise_range_t=None,
+    noise_pct=0.67,
+    noise_std=1.0,
+    noise_seed=42,
+    k_decay=1.0,
+    initialize=True,
+)
+```
+
+Polynomial learning rate decay with optional restarts, warmup, and k-decay. The LR follows `lr_min + (lr_base - lr_min) * (1 - t/t_initial)^power`.
+
+<ParamField path="t_initial" type="int" required>
+  Number of epochs (or updates) in the first cycle.
+</ParamField>
+
+<ParamField path="power" type="float" default="0.5">
+  Polynomial decay exponent. `1.0` gives linear decay, `0.5` gives square-root decay.
+</ParamField>
+
+<ParamField path="lr_min" type="float" default="0.">
+  Minimum learning rate at the end of each cycle.
+</ParamField>
+
+<ParamField path="k_decay" type="float" default="1.0">
+  k-decay exponent for concentrating LR decay.
+</ParamField>
+
+---
+
+### StepLRScheduler
+
+```python
+timm.scheduler.StepLRScheduler(
+    optimizer,
+    decay_t,
+    decay_rate=1.,
+    warmup_t=0,
+    warmup_lr_init=0.,
+    warmup_prefix=True,
+    t_in_epochs=True,
+    noise_range_t=None,
+    noise_pct=0.67,
+    noise_std=1.0,
+    noise_seed=42,
+    initialize=True,
+)
+```
+
+Decays the LR by `decay_rate` every `decay_t` epochs (or updates). Simple step schedule with warmup and noise support.
+
+<ParamField path="decay_t" type="float" required>
+  Step size in epochs (or updates) between LR decays.
+</ParamField>
+
+<ParamField path="decay_rate" type="float" default="1.">
+  Multiplicative LR decay factor applied at each step.
+</ParamField>
+
+<ParamField path="warmup_prefix" type="bool" default="True">
+  If `True`, warmup is counted before the main schedule begins (warmup epochs are added to total).
+</ParamField>
+
+---
+
+### TanhLRScheduler
+
+```python
+timm.scheduler.TanhLRScheduler(
+    optimizer,
+    t_initial,
+    lr_min=0.,
+    cycle_mul=1.,
+    cycle_decay=1.,
+    cycle_limit=1,
+    warmup_t=0,
+    warmup_lr_init=0.,
+    warmup_prefix=False,
+    t_in_epochs=True,
+    noise_range_t=None,
+    noise_pct=0.67,
+    noise_std=1.0,
+    noise_seed=42,
+    initialize=True,
+)
+```
+
+Hyperbolic-tangent (tanh) annealing with optional restarts and warmup. The LR follows a tanh curve which is flatter in the middle and drops off more steeply at the boundaries compared to cosine annealing.
+
+<ParamField path="t_initial" type="int" required>
+  Total number of epochs (or updates) in one cycle.
+</ParamField>
+
+<ParamField path="lr_min" type="float" default="0.">
+  Minimum LR at the end of each cycle.
+</ParamField>
+
+<ParamField path="cycle_mul" type="float" default="1.">
+  Cycle length multiplier for warm restarts.
+</ParamField>
+
+---
+
+## Code Examples
+
+<CodeGroup>
+```python Cosine scheduler — full training loop
+import timm
+from timm.optim import create_optimizer_v2
+from timm.scheduler import create_scheduler_v2
+
+model = timm.create_model('vit_base_patch16_224', pretrained=False, num_classes=100)
+optimizer = create_optimizer_v2(model, opt='adamw', lr=1e-3, weight_decay=0.05)
+
+scheduler, num_epochs = create_scheduler_v2(
+    optimizer,
+    sched='cosine',
+    num_epochs=100,
+    warmup_epochs=10,
+    warmup_lr=1e-6,
+    min_lr=1e-6,
+    cooldown_epochs=5,
+)
+
+for epoch in range(num_epochs):
+    train(model, optimizer, train_loader)
+    val_acc = validate(model, val_loader)
+    scheduler.step(epoch + 1)
+```
+
+```python Plateau scheduler — metric-driven decay
+import timm
+from timm.scheduler import PlateauLRScheduler
+from timm.optim import create_optimizer_v2
+
+model = timm.create_model('resnet50', pretrained=True)
+optimizer = create_optimizer_v2(model, opt='sgd', lr=0.1, momentum=0.9, weight_decay=1e-4)
+
+scheduler = PlateauLRScheduler(
+    optimizer,
+    decay_rate=0.1,
+    patience_t=10,
+    mode='max',   # tracking top-1 accuracy
+    lr_min=1e-5,
+    warmup_t=5,
+    warmup_lr_init=1e-4,
+)
+
+for epoch in range(200):
+    train(model, optimizer, train_loader)
+    top1_acc = validate(model, val_loader)
+    scheduler.step(top1_acc)  # pass the metric value
+```
+
+```python MultiStep schedule
+from timm.optim import create_optimizer_v2
+from timm.scheduler import MultiStepLRScheduler
+
+optimizer = create_optimizer_v2(model, opt='sgd', lr=0.1, momentum=0.9, weight_decay=1e-4)
+
+scheduler = MultiStepLRScheduler(
+    optimizer,
+    decay_t=[30, 60, 90],   # decay at epochs 30, 60, 90
+    decay_rate=0.1,
+    warmup_t=5,
+    warmup_lr_init=0.01,
+)
+
+for epoch in range(100):
+    train(model, optimizer, train_loader)
+    scheduler.step(epoch + 1)
+```
+</CodeGroup>
+
+<Tip>
+  All timm schedulers support per-update stepping (useful with gradient accumulation or very large batches). Set `step_on_epochs=False` and provide `updates_per_epoch` to `create_scheduler_v2`, then call `scheduler.step_update(num_updates)` inside the training loop instead of `scheduler.step(epoch)`.
+</Tip>

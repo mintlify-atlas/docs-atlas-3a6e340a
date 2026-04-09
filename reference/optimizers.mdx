@@ -1,0 +1,346 @@
+---
+title: "Optimizers API"
+description: "Reference documentation for timm optimizer factory functions and the full catalog of available optimizers."
+---
+
+The `timm.optim` package provides a registry-based optimizer factory, discovery utilities, and a large collection of research optimizers. All optimizers are accessible via the factory or can be imported directly from `timm.optim`.
+
+---
+
+## timm.optim.create_optimizer_v2
+
+```python
+timm.optim.create_optimizer_v2(
+    model_or_params,
+    opt='sgd',
+    lr=None,
+    weight_decay=0.,
+    momentum=0.9,
+    foreach=None,
+    filter_bias_and_bn=True,
+    fallback_list=(),
+    fallback_no_weight_decay=False,
+    layer_decay=None,
+    layer_decay_min_scale=0.0,
+    layer_decay_no_opt_scale=None,
+    param_group_fn=None,
+    **kwargs,
+)
+```
+
+The primary optimizer factory. Creates and configures an optimizer with automatic parameter group creation for weight decay, layer-wise learning rate decay, and support for hybrid optimizers (e.g. Muon with an AdamW fallback).
+
+**Parameter group handling precedence:**
+1. `param_group_fn` — fully custom grouping (overrides all other options)
+2. `layer_decay` — creates per-layer groups with decayed learning rates
+3. `weight_decay > 0` and `filter_bias_and_bn=True` — two groups: with and without weight decay
+4. Otherwise — all parameters in a single group
+
+<CodeGroup>
+```python Basic usage
+import timm
+from timm.optim import create_optimizer_v2
+
+model = timm.create_model('resnet50', pretrained=True)
+
+# AdamW with weight decay (biases/norms excluded from decay automatically)
+optimizer = create_optimizer_v2(model, opt='adamw', lr=1e-3, weight_decay=0.05)
+
+# SGD with Nesterov momentum
+optimizer = create_optimizer_v2(
+    model, opt='sgd', lr=0.1, momentum=0.9, weight_decay=1e-4
+)
+```
+
+```python Layer-wise LR decay
+from timm.optim import create_optimizer_v2
+
+# Layer decay: deeper layers get higher LR multipliers
+optimizer = create_optimizer_v2(
+    model,
+    opt='adamw',
+    lr=1e-3,
+    weight_decay=0.05,
+    layer_decay=0.75,
+)
+```
+
+```python Custom parameter groups
+from timm.optim import create_optimizer_v2
+
+def group_fn(model):
+    return [
+        {'params': model.backbone.parameters(), 'lr': 1e-4},
+        {'params': model.head.parameters(), 'lr': 1e-3},
+    ]
+
+optimizer = create_optimizer_v2(model, opt='adamw', param_group_fn=group_fn)
+```
+
+```python Lookahead wrapper
+from timm.optim import create_optimizer_v2
+
+# Prefix opt name with 'lookahead_' to wrap any optimizer with Lookahead
+optimizer = create_optimizer_v2(model, opt='lookahead_adamw', lr=1e-3)
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="model_or_params" type="nn.Module | Iterable" required>
+  A PyTorch `nn.Module` or an iterable of parameters / parameter group dicts. When a module is provided, parameter groups are built automatically based on `weight_decay`, `layer_decay`, and `filter_bias_and_bn`.
+</ParamField>
+
+<ParamField path="opt" type="str" default="'sgd'">
+  Name of the optimizer to create. See `list_optimizers()` for all available names. Prefix with `'lookahead_'` to apply the Lookahead wrapper (e.g. `'lookahead_adamw'`).
+</ParamField>
+
+<ParamField path="lr" type="float | None" default="None">
+  Learning rate. If `None`, the optimizer's own default is used.
+</ParamField>
+
+<ParamField path="weight_decay" type="float" default="0.">
+  Weight decay (L2 regularization) factor. When `> 0` and a model is provided, parameters are split into groups with and without weight decay.
+</ParamField>
+
+<ParamField path="momentum" type="float" default="0.9">
+  Momentum factor. Only applied to optimizers that accept a `momentum` argument (e.g. SGD, LARS, MADGRAD).
+</ParamField>
+
+<ParamField path="foreach" type="bool | None" default="None">
+  Enable or disable the multi-tensor `foreach` implementation. When `None`, optimizer-specific defaults are used. Some optimizers (e.g. Lion) default to `foreach=True`.
+</ParamField>
+
+<ParamField path="filter_bias_and_bn" type="bool" default="True">
+  Exclude 1-D parameters (biases and normalization affine weights) from weight decay when `weight_decay > 0`. Only applies when `model_or_params` is an `nn.Module`.
+</ParamField>
+
+<ParamField path="fallback_list" type="Collection[str]" default="()">
+  Collection of parameter name patterns (supports wildcards) that should use the fallback optimizer for hybrid optimizers such as Muon.
+</ParamField>
+
+<ParamField path="fallback_no_weight_decay" type="bool" default="False">
+  If `True`, parameters in the model's `no_weight_decay()` set are routed to the fallback optimizer for hybrid optimizers.
+</ParamField>
+
+<ParamField path="layer_decay" type="float | None" default="None">
+  Layer-wise learning rate decay factor. Learning rates are scaled by `layer_decay^(max_depth - layer_depth)`. Only used when `model_or_params` is an `nn.Module`.
+</ParamField>
+
+<ParamField path="layer_decay_min_scale" type="float" default="0.0">
+  Minimum layer scale factor (clamp value) when `layer_decay` is set.
+</ParamField>
+
+<ParamField path="layer_decay_no_opt_scale" type="float | None" default="None">
+  Layer scale below which optimization is disabled entirely (parameters frozen).
+</ParamField>
+
+<ParamField path="param_group_fn" type="Callable[[nn.Module], Iterable] | None" default="None">
+  Optional custom function that receives the model and returns parameter groups. When set, all other grouping options (`weight_decay`, `layer_decay`, `filter_bias_and_bn`) are ignored.
+</ParamField>
+
+<ParamField path="**kwargs" type="Any">
+  Additional optimizer-specific keyword arguments forwarded directly (e.g. `betas`, `eps`, `amsgrad` for Adam-family optimizers).
+</ParamField>
+
+### Returns
+
+`torch.optim.Optimizer` — The configured optimizer instance.
+
+---
+
+## timm.optim.list_optimizers
+
+```python
+timm.optim.list_optimizers(
+    filter='',
+    exclude_filters=None,
+    with_description=False,
+)
+```
+
+List all optimizers registered in the timm registry, with optional wildcard filtering.
+
+```python
+from timm.optim import list_optimizers
+
+# All registered optimizers
+all_opts = list_optimizers()
+
+# All Adam variants
+adam_opts = list_optimizers('adam*')
+
+# LAMB and LARS variants
+lamb_lars = list_optimizers(['la*', 'nla*'])
+# ['lamb', 'lambc', 'larc', 'lars', 'nlarc', 'nlars']
+
+# Exclude bnb and fused implementations
+clean_opts = list_optimizers('*adam*', exclude_filters=['bnb*', 'fused*'])
+
+# With descriptions
+opts_with_desc = list_optimizers(with_description=True)
+# [('adabelief', 'Adapts learning rate based on gradient prediction error'), ...]
+```
+
+### Parameters
+
+<ParamField path="filter" type="str | list[str]" default="''">
+  Wildcard pattern(s) to filter optimizer names (e.g. `'adam*'`, `['la*', 'sgd*']`).
+</ParamField>
+
+<ParamField path="exclude_filters" type="list[str] | None" default="None">
+  Optional list of wildcard patterns to exclude from the result.
+</ParamField>
+
+<ParamField path="with_description" type="bool" default="False">
+  If `True`, return a list of `(name, description)` tuples instead of just names.
+</ParamField>
+
+### Returns
+
+`list[str]` or `list[tuple[str, str]]` — Sorted list of optimizer names, or tuples of `(name, description)` when `with_description=True`.
+
+---
+
+## timm.optim.get_optimizer_class
+
+```python
+timm.optim.get_optimizer_class(name, bind_defaults=True)
+```
+
+Retrieve an optimizer class (or partial with defaults bound) by name.
+
+```python
+from timm.optim import get_optimizer_class
+
+# Get SGD class with nesterov=True default bound
+SGD = get_optimizer_class('sgd')
+optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4)
+
+# Get raw class without bound defaults
+AdamW = get_optimizer_class('adamw', bind_defaults=False)
+```
+
+### Parameters
+
+<ParamField path="name" type="str" required>
+  Registered optimizer name (case-insensitive).
+</ParamField>
+
+<ParamField path="bind_defaults" type="bool" default="True">
+  If `True`, return a `functools.partial` with the optimizer's registered default arguments pre-applied.
+</ParamField>
+
+### Returns
+
+`Type[Optimizer] | Callable` — The optimizer class or a partial with defaults applied.
+
+---
+
+## Available Optimizers
+
+The table below lists the core optimizers included in timm. Use `list_optimizers()` to see all registered names including variants (cautious, corrected decay, APEX, bitsandbytes).
+
+| Name | Class | Key Features |
+|------|-------|-------------|
+| `sgd` | `torch.optim.SGD` | Stochastic Gradient Descent with Nesterov momentum |
+| `sgdp` | `SGDP` | SGD with projection to unit norm sphere |
+| `sgdw` | `SGDW` | SGD with decoupled weight decay and Nesterov momentum |
+| `adam` | `torch.optim.Adam` | Adaptive Moment Estimation |
+| `adamw` | `torch.optim.AdamW` | Adam with decoupled weight decay |
+| `adamp` | `AdamP` | Adam with projection to unit norm sphere |
+| `nadam` | `torch.optim.NAdam` | Adam with Nesterov momentum |
+| `nadamw` | `NAdamW` | Nesterov Adam with decoupled weight decay (MLCommons impl) |
+| `radam` | `torch.optim.RAdam` | Rectified Adam with variance adaptation |
+| `adabelief` | `AdaBelief` | Adapts LR based on gradient prediction error |
+| `adafactor` | `Adafactor` | Memory-efficient Adam with factored gradients |
+| `adahessian` | `Adahessian` | Adaptive second-order optimizer (requires `create_graph=True`) |
+| `adan` | `Adan` | Adaptive Nesterov Momentum Algorithm |
+| `adopt` | `Adopt` | Modified Adam that converges with any β₂ at optimal rate |
+| `lamb` | `Lamb` | Layer-wise Adaptive Moments for batch optimization |
+| `laprop` | `LaProp` | Separating Momentum and Adaptivity in Adam |
+| `lars` | `Lars` | Layer-wise Adaptive Rate Scaling |
+| `lion` | `Lion` | Evolved Sign Momentum optimizer |
+| `lookahead` | `Lookahead` | Lookahead wrapper (use via `'lookahead_<opt>'` prefix) |
+| `madgrad` | `MADGRAD` | Momentum-based Adaptive Gradient method |
+| `mars` | `Mars` | Variance reduction for training large models |
+| `muon` | `Muon` | Momentum Orthogonalized by Newton-Schulz with AdamW fallback |
+| `kron` | `Kron` | PSGD with Kronecker-factored preconditioner |
+| `novograd` | `NvNovoGrad` | Normalized Adam with L2 norm gradient normalization |
+| `rmsproptf` | `RMSpropTF` | TensorFlow-style RMSprop implementation |
+
+<AccordionGroup>
+  <Accordion title="Cautious variants">
+    Most core optimizers have a cautious variant (prefix `c`) that applies the Cautious optimizer modification. For example: `cadamw`, `clion`, `cnadamw`, `csgdw`, `cmars`, `clamb`, `claprop`.
+
+    Cautious optimizers mask gradient updates where the sign of the gradient and the sign of the adaptive term disagree, potentially improving convergence.
+  </Accordion>
+
+  <Accordion title="Corrected weight decay variants">
+    Several optimizers support corrected weight decay (suffix `c`) that scales weight decay by `lr²/max_lr`. For example: `adamc`, `nadamc`, `sgdc`, `adoptc`, `lionc`, `lapropc`, `kronc`.
+  </Accordion>
+
+  <Accordion title="APEX fused optimizers">
+    NVIDIA APEX fused implementations are registered if APEX is installed: `fusedsgd`, `fusedadam`, `fusedadamw`, `fusedlamb`, `fusednovograd`. These require CUDA.
+  </Accordion>
+
+  <Accordion title="bitsandbytes 8-bit optimizers">
+    bitsandbytes quantized implementations are registered if bitsandbytes is installed: `bnbadam`, `bnbadam8bit`, `bnbadamw`, `bnbadamw8bit`, `bnblion`, `bnblion8bit`, `bnbsgd`, `bnbsgd8bit`, `bnbademamix`, `bnbademamix8bit`. These require CUDA.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  All optimizer names are case-insensitive in the registry. The names listed above are their canonical lowercase forms.
+</Note>
+
+---
+
+## Code Examples
+
+<CodeGroup>
+```python Training setup with AdamW
+import timm
+from timm.optim import create_optimizer_v2
+from timm.scheduler import create_scheduler_v2
+
+model = timm.create_model('vit_base_patch16_224', pretrained=True)
+
+optimizer = create_optimizer_v2(
+    model,
+    opt='adamw',
+    lr=1e-4,
+    weight_decay=0.05,
+    filter_bias_and_bn=True,  # exclude norms/biases from decay
+)
+
+scheduler, num_epochs = create_scheduler_v2(optimizer, sched='cosine', num_epochs=300)
+```
+
+```python Lion optimizer
+from timm.optim import create_optimizer_v2
+
+# Lion defaults to foreach=True for performance
+optimizer = create_optimizer_v2(
+    model,
+    opt='lion',
+    lr=1e-4,
+    weight_decay=0.1,
+    betas=(0.9, 0.99),
+)
+```
+
+```python Muon with AdamW fallback
+from timm.optim import create_optimizer_v2
+
+# Muon for 2D+ params, AdamW for 1D (biases, norms, embeddings)
+optimizer = create_optimizer_v2(
+    model,
+    opt='muon',
+    lr=0.02,
+    momentum=0.95,
+    weight_decay=0.01,
+    # route embedding and head params to AdamW fallback
+    fallback_list=['*embed*', '*head*'],
+)
+```
+</CodeGroup>

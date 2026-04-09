@@ -1,97 +1,82 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "timm — PyTorch Image Models"
+description: "The largest collection of PyTorch image encoders and backbones. 700+ pretrained models for image classification, feature extraction, and transfer learning."
 ---
 
-## Setting up
+`timm` is a library of SOTA computer vision models, layers, utilities, optimizers, schedulers, data-loaders, and augmentations. It provides a consistent, unified API for loading, training, and evaluating any of the 700+ pretrained image models included in the library.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Load your first pretrained model and run inference in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="download" href="/installation">
+    Install timm via pip or from source.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Model Reference" icon="brain" href="/models/overview">
+    Browse all supported architectures — ViT, ResNet, EfficientNet, ConvNeXt, and more.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/reference/models">
+    Full API docs for models, data, optimizers, and schedulers.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you can do with timm
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Feature extraction" icon="layer-group" href="/guides/feature-extraction">
+    Use any model as a backbone to extract intermediate feature maps for downstream tasks.
+  </Card>
+  <Card title="Fine-tuning" icon="sliders" href="/guides/finetuning">
+    Adapt pretrained models to your own dataset by replacing the classifier head.
+  </Card>
+  <Card title="Distributed training" icon="server" href="/guides/training-script">
+    Train on ImageNet-scale datasets with multi-GPU distributed training scripts.
+  </Card>
+  <Card title="Hugging Face Hub" icon="cube" href="/guides/hf-hub">
+    Share and load custom fine-tuned models directly from the HF Hub.
+  </Card>
+  <Card title="Data augmentation" icon="image" href="/guides/augmentation">
+    Apply RandAugment, MixUp, CutMix, AugMix, and Random Erasing to your pipelines.
+  </Card>
+  <Card title="Hyperparameters" icon="chart-line" href="/guides/hyperparameters">
+    Explore proven training recipes used across hundreds of timm model checkpoints.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Get started in three steps
 
-## Need inspiration?
+<Steps>
+  <Step title="Install timm">
+    ```bash
+    pip install timm
+    ```
+  </Step>
+  <Step title="Load a pretrained model">
+    ```python
+    import timm
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+    model = timm.create_model('efficientnet_b0', pretrained=True)
+    model.eval()
+    ```
+  </Step>
+  <Step title="Run inference">
+    ```python
+    import torch
+    import timm
+
+    model = timm.create_model('efficientnet_b0', pretrained=True).eval()
+    data_cfg = timm.data.resolve_data_config(model.pretrained_cfg)
+    transform = timm.data.create_transform(**data_cfg)
+
+    # Pass a (3, H, W) PIL image through transform, then:
+    x = torch.randn(1, 3, 224, 224)  # replace with your transformed image
+    with torch.no_grad():
+        output = model(x)
+    probabilities = torch.nn.functional.softmax(output[0], dim=0)
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  timm ships with over 700 pretrained weights. Run `timm.list_models(pretrained=True)` to see all available checkpoints.
+</Note>

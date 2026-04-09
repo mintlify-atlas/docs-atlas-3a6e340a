@@ -1,0 +1,616 @@
+---
+title: "Data API"
+description: "Reference documentation for timm data loading, transformation, and augmentation utilities."
+---
+
+The `timm.data` package provides dataset creation, data loading, image transformation pipelines, data configuration resolution, and batch augmentation utilities. All public symbols are importable directly from `timm.data`.
+
+---
+
+## timm.data.create_dataset
+
+```python
+timm.data.create_dataset(
+    name,
+    root=None,
+    split='validation',
+    search_split=True,
+    class_map=None,
+    load_bytes=False,
+    is_training=False,
+    download=False,
+    batch_size=1,
+    num_samples=None,
+    seed=42,
+    repeats=0,
+    input_img_mode='RGB',
+    trust_remote_code=False,
+    **kwargs,
+)
+```
+
+Dataset factory that supports multiple backend types: local image folders or tar archives, torchvision built-in datasets, Hugging Face Datasets, TensorFlow Datasets, and WebDataset.
+
+The `name` argument selects the backend:
+
+| Prefix | Backend |
+|--------|---------|
+| *(empty)* | timm `ImageDataset` (folder / tar) |
+| `torch/` | torchvision datasets (e.g. `torch/cifar10`) |
+| `hfds/` | Hugging Face Datasets (map-style) |
+| `hfids/` | Hugging Face Datasets (iterable / streaming) |
+| `tfds/` | TensorFlow Datasets (via iterable interface) |
+| `wds/` | WebDataset |
+
+<CodeGroup>
+```python Folder dataset
+from timm.data import create_dataset
+
+# ImageNet-style folder layout: root/class_name/image.jpg
+dataset = create_dataset('', root='/data/imagenet', split='train')
+val_dataset = create_dataset('', root='/data/imagenet', split='validation')
+```
+
+```python Torchvision built-in
+from timm.data import create_dataset
+
+# Available: cifar10, cifar100, mnist, kmnist, fashion_mnist, imagenet, inaturalist, places365
+cifar = create_dataset('torch/cifar10', root='/data', split='train', download=True)
+```
+
+```python Hugging Face Datasets
+from timm.data import create_dataset
+
+# Map-style (random access)
+ds = create_dataset('hfds/imagenet-1k', root=None, split='train')
+
+# Iterable / streaming mode
+ds = create_dataset('hfids/imagenet-1k', root=None, split='train', is_training=True)
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="name" type="str" required>
+  Dataset name or prefixed URI. Empty string uses the default timm `ImageDataset`. Supported prefixes: `torch/`, `hfds/`, `hfids/`, `tfds/`, `wds/`.
+</ParamField>
+
+<ParamField path="root" type="str | None" default="None">
+  Root directory of the dataset. Required for all folder-based datasets. For cloud/streaming datasets (TFDS, WDS, HFDS), can be `None` or a URL/path.
+</ParamField>
+
+<ParamField path="split" type="str" default="'validation'">
+  Dataset split to load. Accepts canonical names (`'train'`, `'val'`, `'test'`) and common synonyms (`'training'`, `'validation'`, `'eval'`). For local folder datasets, `search_split=True` causes timm to automatically search for a sub-folder matching the split name.
+</ParamField>
+
+<ParamField path="search_split" type="bool" default="True">
+  Search for a split-specific sub-folder inside `root` (e.g. `root/train/` or `root/val/`). Applies to folder-based (`Folder`) and torchvision (`Torch`) datasets only.
+</ParamField>
+
+<ParamField path="class_map" type="dict | None" default="None">
+  A mapping of class name to class index. Accepts a dict or a path to a text file. Applies to folder-based datasets only.
+</ParamField>
+
+<ParamField path="load_bytes" type="bool" default="False">
+  Return raw undecoded image bytes instead of decoded images. Applies to folder-based `ImageDataset` only.
+</ParamField>
+
+<ParamField path="is_training" type="bool" default="False">
+  Create the dataset in training mode. Enables shuffling for iterable datasets (TFDS, WDS, HFIDS). This is distinct from the `split` argument.
+</ParamField>
+
+<ParamField path="download" type="bool" default="False">
+  Download the dataset if not already present. Supported by HFIDS, TFDS, and torchvision datasets.
+</ParamField>
+
+<ParamField path="batch_size" type="int" default="1">
+  Batch size hint for iterable datasets (TFDS, WDS, HFIDS). Used to configure sharding and prefetching.
+</ParamField>
+
+<ParamField path="num_samples" type="int | None" default="None">
+  Optional fixed number of samples for iterable datasets (HFIDS, WDS, TFDS).
+</ParamField>
+
+<ParamField path="seed" type="int" default="42">
+  Random seed for iterable datasets (TFDS, WDS, HFIDS).
+</ParamField>
+
+<ParamField path="repeats" type="int" default="0">
+  Number of dataset repeats per iteration / epoch for iterable datasets (TFDS, WDS, HFIDS). `0` means no explicit repeating.
+</ParamField>
+
+<ParamField path="input_img_mode" type="str" default="'RGB'">
+  PIL image color conversion mode when loading images. Common values: `'RGB'`, `'L'` (grayscale). Applies to folder, TFDS, WDS, HFDS, and HFIDS backends.
+</ParamField>
+
+<ParamField path="trust_remote_code" type="bool" default="False">
+  Allow execution of remote code when loading Hugging Face Datasets (HFDS, HFIDS). Required for some community datasets that define custom loading scripts.
+</ParamField>
+
+### Returns
+
+`Dataset` — A PyTorch-compatible dataset object.
+
+---
+
+## timm.data.create_loader
+
+```python
+timm.data.create_loader(
+    dataset,
+    input_size,
+    batch_size,
+    is_training=False,
+    no_aug=False,
+    re_prob=0.,
+    re_mode='const',
+    re_count=1,
+    re_split=False,
+    train_crop_mode=None,
+    scale=None,
+    ratio=None,
+    hflip=0.5,
+    vflip=0.,
+    color_jitter=0.4,
+    color_jitter_prob=None,
+    grayscale_prob=0.,
+    gaussian_blur_prob=0.,
+    auto_augment=None,
+    num_aug_repeats=0,
+    num_aug_splits=0,
+    interpolation='bilinear',
+    mean=IMAGENET_DEFAULT_MEAN,
+    std=IMAGENET_DEFAULT_STD,
+    num_workers=1,
+    distributed=False,
+    crop_pct=None,
+    crop_mode=None,
+    crop_border_pixels=None,
+    collate_fn=None,
+    pin_memory=False,
+    img_dtype=torch.float32,
+    device=torch.device('cuda'),
+    use_prefetcher=True,
+    use_multi_epochs_loader=False,
+    persistent_workers=True,
+    worker_seeding='all',
+    tf_preprocessing=False,
+)
+```
+
+Create a `DataLoader` (wrapped in a `PrefetchLoader` by default) with built-in image transforms, optional CUDA prefetching, distributed sampling, and augmentation support.
+
+<CodeGroup>
+```python Training loader
+from timm.data import create_dataset, create_loader
+
+dataset = create_dataset('', root='/data/imagenet', split='train')
+loader = create_loader(
+    dataset,
+    input_size=(3, 224, 224),
+    batch_size=256,
+    is_training=True,
+    hflip=0.5,
+    auto_augment='rand-m9-mstd0.5',
+    re_prob=0.25,
+    num_workers=8,
+    distributed=True,
+)
+```
+
+```python Validation loader
+from timm.data import create_dataset, create_loader
+
+dataset = create_dataset('', root='/data/imagenet', split='validation')
+loader = create_loader(
+    dataset,
+    input_size=(3, 224, 224),
+    batch_size=512,
+    is_training=False,
+    crop_pct=0.875,
+    num_workers=8,
+)
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="dataset" type="ImageDataset | IterableImageDataset" required>
+  The dataset to wrap. Typically the output of `create_dataset()`.
+</ParamField>
+
+<ParamField path="input_size" type="int | tuple[int, int] | tuple[int, int, int]" required>
+  Target input size as an integer (square), `(H, W)` tuple, or `(C, H, W)` tuple.
+</ParamField>
+
+<ParamField path="batch_size" type="int" required>
+  Number of samples per batch.
+</ParamField>
+
+<ParamField path="is_training" type="bool" default="False">
+  Apply training (random) transforms when `True`, evaluation (deterministic) transforms when `False`.
+</ParamField>
+
+<ParamField path="no_aug" type="bool" default="False">
+  Disable all data augmentation during training. Useful for debugging.
+</ParamField>
+
+<ParamField path="re_prob" type="float" default="0.">
+  Random erasing probability. Set `> 0` to enable.
+</ParamField>
+
+<ParamField path="re_mode" type="str" default="'const'">
+  Fill mode for random erasing regions. One of `'const'`, `'rand'`, `'pixel'`.
+</ParamField>
+
+<ParamField path="re_count" type="int" default="1">
+  Number of random erasing regions to apply per image.
+</ParamField>
+
+<ParamField path="hflip" type="float" default="0.5">
+  Horizontal flip probability during training.
+</ParamField>
+
+<ParamField path="vflip" type="float" default="0.">
+  Vertical flip probability during training.
+</ParamField>
+
+<ParamField path="color_jitter" type="float" default="0.4">
+  Strength of color jitter augmentation (brightness, contrast, saturation). A scalar is applied as `(scalar,) * 3`.
+</ParamField>
+
+<ParamField path="auto_augment" type="str | None" default="None">
+  Auto augment configuration string. Examples: `'rand-m9-mstd0.5'` (RandAugment), `'augmix-m5'` (AugMix), `'original-mstd0.5'` (AutoAugment).
+</ParamField>
+
+<ParamField path="interpolation" type="str" default="'bilinear'">
+  Image interpolation mode. Common values: `'bilinear'`, `'bicubic'`, `'random'` (training only, randomly selects per-batch).
+</ParamField>
+
+<ParamField path="mean" type="tuple[float, ...]" default="IMAGENET_DEFAULT_MEAN">
+  Per-channel normalization mean. Default is ImageNet mean `(0.485, 0.456, 0.406)`.
+</ParamField>
+
+<ParamField path="std" type="tuple[float, ...]" default="IMAGENET_DEFAULT_STD">
+  Per-channel normalization standard deviation. Default is ImageNet std `(0.229, 0.224, 0.225)`.
+</ParamField>
+
+<ParamField path="num_workers" type="int" default="1">
+  Number of worker processes for the `DataLoader`.
+</ParamField>
+
+<ParamField path="distributed" type="bool" default="False">
+  Enable distributed sampling (wraps with `DistributedSampler`).
+</ParamField>
+
+<ParamField path="crop_pct" type="float | None" default="None">
+  Inference crop percentage: output size divided by resize size. Defaults to `0.875` when `None`.
+</ParamField>
+
+<ParamField path="crop_mode" type="str | None" default="None">
+  Inference crop mode. One of `'squash'`, `'border'`, `'center'`. Defaults to `'center'` when `None`.
+</ParamField>
+
+<ParamField path="pin_memory" type="bool" default="False">
+  Pin memory for faster host-to-device transfer.
+</ParamField>
+
+<ParamField path="img_dtype" type="torch.dtype" default="torch.float32">
+  Data type for the input image tensor after prefetching.
+</ParamField>
+
+<ParamField path="device" type="torch.device" default="torch.device('cuda')">
+  Target device for prefetched tensors.
+</ParamField>
+
+<ParamField path="use_prefetcher" type="bool" default="True">
+  Wrap the loader in a `PrefetchLoader` for asynchronous GPU data transfer and on-device normalization.
+</ParamField>
+
+<ParamField path="persistent_workers" type="bool" default="True">
+  Keep worker processes alive between batches for faster epoch transitions.
+</ParamField>
+
+### Returns
+
+`PrefetchLoader | DataLoader` — The configured data loader.
+
+---
+
+## timm.data.create_transform
+
+```python
+timm.data.create_transform(
+    input_size=224,
+    is_training=False,
+    no_aug=False,
+    train_crop_mode=None,
+    scale=None,
+    ratio=None,
+    hflip=0.5,
+    vflip=0.,
+    color_jitter=0.4,
+    color_jitter_prob=None,
+    grayscale_prob=0.,
+    gaussian_blur_prob=0.,
+    auto_augment=None,
+    interpolation='bilinear',
+    mean=IMAGENET_DEFAULT_MEAN,
+    std=IMAGENET_DEFAULT_STD,
+    re_prob=0.,
+    re_mode='const',
+    re_count=1,
+    re_num_splits=0,
+    crop_pct=None,
+    crop_mode=None,
+    crop_border_pixels=None,
+    tf_preprocessing=False,
+    use_prefetcher=False,
+    normalize=True,
+    separate=False,
+    naflex=False,
+    patch_size=16,
+    max_seq_len=576,
+    patchify=False,
+)
+```
+
+Build a composed image transform pipeline. Dispatches to `transforms_imagenet_train` (training) or `transforms_imagenet_eval` (evaluation) depending on `is_training`. The resulting transform converts a PIL image (or numpy array) to a normalized float tensor.
+
+```python
+from timm.data import create_transform
+
+# Training transform
+train_transform = create_transform(
+    input_size=224,
+    is_training=True,
+    hflip=0.5,
+    auto_augment='rand-m9-mstd0.5',
+    re_prob=0.25,
+)
+
+# Evaluation transform
+eval_transform = create_transform(
+    input_size=224,
+    is_training=False,
+    crop_pct=0.875,
+    interpolation='bicubic',
+)
+
+# Returns 3-tuple of transforms for AugMix-style split augmentation
+primary, secondary, final = create_transform(
+    input_size=224,
+    is_training=True,
+    separate=True,
+)
+```
+
+### Parameters
+
+<ParamField path="input_size" type="int | tuple[int, int] | tuple[int, int, int]" default="224">
+  Target input size. Can be a scalar (square), `(H, W)`, or `(C, H, W)`.
+</ParamField>
+
+<ParamField path="is_training" type="bool" default="False">
+  If `True`, apply random training augmentations. If `False`, apply deterministic eval transforms.
+</ParamField>
+
+<ParamField path="no_aug" type="bool" default="False">
+  Disable augmentation even in training mode (resize + center crop only).
+</ParamField>
+
+<ParamField path="train_crop_mode" type="str | None" default="None">
+  Training random crop strategy. One of `'rrc'` (RandomResizedCrop, default), `'rkrc'` (ResizeKeepRatio + CenterCrop), `'rkrr'` (ResizeKeepRatio + RandomCrop).
+</ParamField>
+
+<ParamField path="scale" type="tuple[float, float] | None" default="None">
+  Random resize scale range for the crop area. Defaults to `(0.08, 1.0)`.
+</ParamField>
+
+<ParamField path="ratio" type="tuple[float, float] | None" default="None">
+  Random aspect ratio range. Defaults to `(3/4, 4/3)`.
+</ParamField>
+
+<ParamField path="hflip" type="float" default="0.5">
+  Probability of horizontal flip (training only).
+</ParamField>
+
+<ParamField path="auto_augment" type="str | None" default="None">
+  Auto augment policy string. Starts with `'rand'` for RandAugment, `'augmix'` for AugMix, otherwise AutoAugment.
+</ParamField>
+
+<ParamField path="interpolation" type="str" default="'bilinear'">
+  Image interpolation algorithm: `'bilinear'`, `'bicubic'`, `'nearest'`, or `'random'` (training only).
+</ParamField>
+
+<ParamField path="mean" type="tuple[float, ...]" default="IMAGENET_DEFAULT_MEAN">
+  Normalization mean per channel.
+</ParamField>
+
+<ParamField path="std" type="tuple[float, ...]" default="IMAGENET_DEFAULT_STD">
+  Normalization standard deviation per channel.
+</ParamField>
+
+<ParamField path="re_prob" type="float" default="0.">
+  Random erasing probability.
+</ParamField>
+
+<ParamField path="crop_pct" type="float | None" default="None">
+  Eval crop fraction: output_size / resize_size. Defaults to `0.875`.
+</ParamField>
+
+<ParamField path="crop_mode" type="str | None" default="None">
+  Eval crop mode: `'squash'`, `'border'`, or `'center'` (default).
+</ParamField>
+
+<ParamField path="use_prefetcher" type="bool" default="False">
+  Skip tensor conversion and normalization (handled by `PrefetchLoader` instead).
+</ParamField>
+
+<ParamField path="normalize" type="bool" default="True">
+  Apply mean/std normalization. Set to `False` to get an un-normalized tensor.
+</ParamField>
+
+<ParamField path="separate" type="bool" default="False">
+  Return transforms as a 3-tuple `(primary, secondary, final)` for use with mixing datasets.
+</ParamField>
+
+### Returns
+
+`transforms.Compose` or `tuple[transforms.Compose, transforms.Compose, transforms.Compose]` when `separate=True`.
+
+---
+
+## timm.data.resolve_data_config
+
+```python
+timm.data.resolve_data_config(
+    args=None,
+    pretrained_cfg=None,
+    model=None,
+    use_test_size=False,
+    verbose=False,
+)
+```
+
+Resolve a data configuration dictionary from a combination of command-line arguments, a pretrained config, and a model instance. At least one of the three inputs must be provided. Arguments take priority over pretrained config, which takes priority over model defaults.
+
+The returned dict contains: `input_size`, `interpolation`, `mean`, `std`, `crop_pct`, `crop_mode`.
+
+```python
+import timm
+from timm.data import resolve_data_config, create_transform
+
+model = timm.create_model('efficientnet_b0', pretrained=True)
+
+# Resolve config from the model's pretrained_cfg
+data_cfg = resolve_data_config(model=model)
+print(data_cfg)
+# {'input_size': (3, 224, 224), 'interpolation': 'bicubic',
+#  'mean': (0.485, 0.456, 0.406), 'std': (0.229, 0.224, 0.225),
+#  'crop_pct': 0.875, 'crop_mode': 'center'}
+
+# Build a matching eval transform
+transform = create_transform(**data_cfg)
+
+# Override with command-line style args dict
+data_cfg = resolve_data_config(
+    args={'img_size': 384, 'interpolation': 'bicubic'},
+    model=model,
+)
+```
+
+### Parameters
+
+<ParamField path="args" type="dict | None" default="None">
+  Dictionary of configuration arguments (e.g. from argparse). Recognized keys include `input_size`, `img_size`, `in_chans`, `interpolation`, `mean`, `std`, `crop_pct`, `crop_mode`. Values in `args` override `pretrained_cfg`.
+</ParamField>
+
+<ParamField path="pretrained_cfg" type="dict | PretrainedCfg | None" default="None">
+  Pretrained model configuration (dict or dataclass). Overrides defaults from the model's attached `pretrained_cfg`.
+</ParamField>
+
+<ParamField path="model" type="nn.Module | None" default="None">
+  A timm model instance. If provided and `pretrained_cfg` is not set, the config is read from `model.pretrained_cfg`.
+</ParamField>
+
+<ParamField path="use_test_size" type="bool" default="False">
+  Use the model's `test_input_size` (if defined) instead of the default training input size.
+</ParamField>
+
+<ParamField path="verbose" type="bool" default="False">
+  Log the resolved configuration values.
+</ParamField>
+
+### Returns
+
+`dict` — Resolved data configuration with keys: `input_size`, `interpolation`, `mean`, `std`, `crop_pct`, `crop_mode`.
+
+<Note>
+  `timm.data.resolve_model_data_config(model, args, ...)` is an equivalent function with the argument order re-arranged to place `model` first.
+</Note>
+
+---
+
+## timm.data.Mixup
+
+```python
+timm.data.Mixup(
+    mixup_alpha=1.,
+    cutmix_alpha=0.,
+    cutmix_minmax=None,
+    prob=1.0,
+    switch_prob=0.5,
+    mode='batch',
+    correct_lam=True,
+    label_smoothing=0.1,
+    num_classes=1000,
+)
+```
+
+Callable that applies Mixup and/or CutMix augmentation to a batch of images and soft-labels. Can be applied per-batch, per-pair of elements, or per-element. Simultaneously generates one-hot soft targets with optional label smoothing.
+
+```python
+import torch
+from timm.data import Mixup
+
+mixup_fn = Mixup(
+    mixup_alpha=0.8,
+    cutmix_alpha=1.0,
+    switch_prob=0.5,
+    label_smoothing=0.1,
+    num_classes=1000,
+)
+
+# Apply in training loop
+for images, labels in loader:
+    images, soft_labels = mixup_fn(images, labels)
+    outputs = model(images)
+    loss = criterion(outputs, soft_labels)
+    ...
+
+# Disable mixing mid-training
+mixup_fn.mixup_enabled = False
+```
+
+### Parameters
+
+<ParamField path="mixup_alpha" type="float" default="1.">
+  Alpha parameter for the Beta distribution used to sample the Mixup lambda. Mixup is active when `> 0`.
+</ParamField>
+
+<ParamField path="cutmix_alpha" type="float" default="0.">
+  Alpha parameter for the Beta distribution used to sample the CutMix lambda. CutMix is active when `> 0`.
+</ParamField>
+
+<ParamField path="cutmix_minmax" type="list[float] | None" default="None">
+  Min/max image ratio for CutMix bounding box (as fractions of image size). When set, CutMix uses this instead of `cutmix_alpha` and forces `cutmix_alpha=1.0`.
+</ParamField>
+
+<ParamField path="prob" type="float" default="1.0">
+  Probability of applying Mixup or CutMix to a given batch or element.
+</ParamField>
+
+<ParamField path="switch_prob" type="float" default="0.5">
+  Probability of applying CutMix rather than Mixup when both are active.
+</ParamField>
+
+<ParamField path="mode" type="str" default="'batch'">
+  How to apply augmentation parameters: `'batch'` (same lambda for all samples), `'pair'` (per pair of elements), `'elem'` (per element).
+</ParamField>
+
+<ParamField path="correct_lam" type="bool" default="True">
+  Correct the effective lambda value based on the actual area of the CutMix bounding box (which may be clipped by image borders).
+</ParamField>
+
+<ParamField path="label_smoothing" type="float" default="0.1">
+  Label smoothing factor applied to the one-hot target before mixing.
+</ParamField>
+
+<ParamField path="num_classes" type="int" default="1000">
+  Number of classes used to construct one-hot targets.
+</ParamField>
+
+### Returns (when called)
+
+`tuple[torch.Tensor, torch.Tensor]` — Mixed image batch and the corresponding soft label tensor of shape `(B, num_classes)`.

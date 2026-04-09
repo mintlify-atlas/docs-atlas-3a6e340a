@@ -1,0 +1,126 @@
+---
+title: "Training Hyperparameters"
+description: "Reference for timm pretrained weight hparam tags, optimizer and schedule families, and config file gists for the training script."
+---
+
+Many `timm` pretrained models are trained with specific, documented hyperparameter recipes. Each pretrained weight tag encodes which recipe was used, making it easy to reproduce or adapt a training run. This page describes the tag system, the corresponding optimizer/schedule families, and how to use YAML config files with the `timm` training script.
+
+---
+
+## Hparam tags
+
+Pretrained weight tags are appended to a model name with a dot separator (e.g. `resnet50.a1_in1k`). The tag portion before `_in1k` (or another dataset suffix) identifies the hparam recipe.
+
+| Tag(s) | Optimizer | LR Schedule | Notes |
+|--------|-----------|-------------|-------|
+| `a1h` | LAMB | Cosine with warmup | Based on [ResNet Strikes Back](https://arxiv.org/abs/2110.00476) `A1` recipe. Stronger dropout, stochastic depth, and RandAugment than the paper's `A1`. |
+| `ah` | LAMB | Cosine with warmup | Based on `A1` recipe. No CutMix. Stronger dropout, stochastic depth, and RandAugment than the paper's `A1`. |
+| `a1`, `a2`, `a3` | LAMB with BCE loss | Cosine with warmup | ResNet Strikes Back `A{1,2,3}` recipes. |
+| `b1`, `b2`, `b1k`, `b2k` | RMSProp (TF 1.0 behaviour) | Step (exponential decay w/ staircase) with warmup | Based on ResNet Strikes Back `B` recipe. Equivalent to `timm` `ra2` recipes. |
+| `c`, `c1`, `c2`, `c3` | SGD (Nesterov) with AGC | Cosine with warmup | Based on ResNet Strikes Back `C` recipes. |
+| `ch` | SGD (Nesterov) with AGC | Cosine with warmup | Based on `C` recipes. Stronger dropout, stochastic depth, and RandAugment than `C1`/`C2`. |
+| `d`, `d1`, `d2` | AdamW with BCE loss | Cosine with warmup | Based on ResNet Strikes Back `D` recipe. |
+| `sw` | AdamW with gradient clipping, EMA | Cosine with warmup | Based on Swin Transformer pretrain recipe. Basis of DeiT and ConvNeXt recipes. |
+| `ra`, `ra2`, `ra3`, `racm`, `raa` | RMSProp (TF 1.0 behaviour), EMA | Step (exponential decay w/ staircase) with warmup | RandAugment recipes inspired by EfficientNet training. Covered by `B` recipe in ResNet Strikes Back. |
+| `ra4` | — | — | RandAugment v4. Inspired by MobileNetV4 hyperparameters. |
+| `am` | SGD (Nesterov) with JSD loss | Cosine with warmup | AugMix recipe. |
+| `ram` | SGD (Nesterov) with JSD loss | Cosine with warmup | AugMix with RandAugment recipe. |
+| `bt` | SGD (Nesterov) | Cosine with warmup | Bag-of-Tricks recipe. |
+
+---
+
+## Config file gists
+
+Several hyperparameter families are available as downloadable YAML config files (gists). These can be passed directly to the `timm` training script with `--config hparam.yaml`.
+
+<Note>
+The learning rate in these configs is tuned for a specific effective batch size. Always scale `--lr` proportionally when changing the number of GPUs or batch size.
+</Note>
+
+| Tag | Key model families | Config gist |
+|-----|--------------------|-------------|
+| `ra2` | ResNet, EfficientNet, RegNet, NFNet | [rwightman/07839a82d0f50e42840168bc43df70b3](https://gist.github.com/rwightman/07839a82d0f50e42840168bc43df70b3) |
+| `ra3` | RegNet | [rwightman/37252f8d7d850a94e43f1fcb7b3b8322](https://gist.github.com/rwightman/37252f8d7d850a94e43f1fcb7b3b8322) |
+| `ra4` | MobileNetV4 | [rwightman/f6705cb65c03daeebca8aa129b1b94ad](https://gist.github.com/rwightman/f6705cb65c03daeebca8aa129b1b94ad) |
+| `sw` | ViT, ConvNeXt, CoAtNet, MaxViT | [rwightman/943c0fe59293b44024bbd2d5d23e6303](https://gist.github.com/rwightman/943c0fe59293b44024bbd2d5d23e6303) |
+| `sbb` | ViT | [rwightman/fb37c339efd2334177ff99a8083ebbc4](https://gist.github.com/rwightman/fb37c339efd2334177ff99a8083ebbc4) |
+| — | Tiny test models | [rwightman/9ba8efc39a546426e99055720d2f705f](https://gist.github.com/rwightman/9ba8efc39a546426e99055720d2f705f) |
+
+---
+
+## Using a config file
+
+Download a gist and pass it to the training script with `--config`. Command-line arguments override values in the config file.
+
+```bash
+# Download the ra2 config
+curl -o ra2.yaml https://gist.githubusercontent.com/rwightman/07839a82d0f50e42840168bc43df70b3/raw/ra2.yaml
+
+# Train using the config, overriding LR for your batch size
+./distributed_train.sh 8 \
+  --config ra2.yaml \
+  --data-dir /data/imagenet \
+  --model resnet50 \
+  --lr 0.6
+```
+
+The config parser runs first: all keys in the YAML file become argument defaults, and any arguments specified on the command line take priority.
+
+---
+
+## Recipes at a glance
+
+<CardGroup cols={2}>
+  <Card title="A-series (a1 / a2 / a3)" icon="bolt">
+    **Optimizer:** LAMB with BCE loss  
+    **Schedule:** Cosine with warmup  
+    Best for: ResNets and similar convnets when high accuracy with strong regularization is needed. `a1h`/`ah` variants add stronger RandAugment and stochastic depth.
+  </Card>
+  <Card title="B-series / ra2 (b1 / b2 / ra2)" icon="chart-line">
+    **Optimizer:** RMSProp (TF 1.0 behaviour) with EMA  
+    **Schedule:** Step (exponential decay) with warmup  
+    Best for: EfficientNet, RegNet, NFNet. Closest to the EfficientNet training setup.
+  </Card>
+  <Card title="C-series (c / c1 / c2 / c3)" icon="gear">
+    **Optimizer:** SGD with Nesterov momentum + AGC  
+    **Schedule:** Cosine with warmup  
+    Best for: ResNets where SGD stability is preferred.
+  </Card>
+  <Card title="sw (Swin / ViT / ConvNeXt)" icon="brain">
+    **Optimizer:** AdamW with gradient clipping and EMA  
+    **Schedule:** Cosine with warmup  
+    Best for: Transformer-based architectures and ConvNeXt. Basis of the DeiT and ConvNeXt community recipes.
+  </Card>
+  <Card title="am / ram (AugMix)" icon="shuffle">
+    **Optimizer:** SGD with JSD loss  
+    **Schedule:** Cosine with warmup  
+    Best for: Training with AugMix for improved OOD robustness. `ram` adds RandAugment on top of AugMix.
+  </Card>
+  <Card title="bt (Bag of Tricks)" icon="bag-shopping">
+    **Optimizer:** SGD (Nesterov)  
+    **Schedule:** Cosine with warmup  
+    Best for: Simple, reproducible ResNet baselines using established tricks (warmup, label smoothing, mixup).
+  </Card>
+</CardGroup>
+
+---
+
+## Adapting a recipe
+
+When using a downloaded YAML config as a starting point:
+
+1. **Scale the learning rate** with effective batch size: `lr_new = lr_base * (batch_total / batch_base)`. For cosine recipes, a linear scaling rule is typically used.
+2. **Adjust epochs** for larger models — e.g. ResNet-50 trains well at 300 epochs with `a2`, while ResNet-101 may benefit from 600.
+3. **Tune stochastic depth** (`drop-path-rate`) proportionally to model depth.
+4. **Verify EMA decay** — a decay of `0.9999` (or `1 - 1/steps_per_epoch`) is typical for longer training runs.
+
+```bash
+# Example: adapt the sw recipe for a smaller ViT on 2 GPUs
+./distributed_train.sh 2 \
+  --config sw.yaml \
+  --data-dir /data/imagenet \
+  --model vit_small_patch16_224 \
+  --epochs 300 \
+  --lr 1e-3 \
+  --batch-size 512
+```

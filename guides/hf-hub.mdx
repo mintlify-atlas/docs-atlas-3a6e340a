@@ -1,0 +1,109 @@
+---
+title: "Hugging Face Hub"
+description: "Share and load timm models via the Hugging Face Hub with push_to_hf_hub and the hf-hub: model name prefix."
+---
+
+`timm` has built-in integration with the Hugging Face Hub. You can push a fine-tuned model to the Hub and load it back with a single function call — no manual file management required.
+
+---
+
+## Setup
+
+`huggingface_hub` is included as a dependency of `timm` and is installed automatically with `pip install timm`. No additional installation is needed.
+
+<Steps>
+  <Step title="Authenticate">
+    Log in with the Hugging Face CLI. This stores a token that `timm` uses automatically when pushing models.
+
+    ```bash
+    huggingface-cli login
+    ```
+
+    If you are working in a notebook, use the `notebook_login` helper instead:
+
+    ```python
+    from huggingface_hub import notebook_login
+    notebook_login()
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Push a model to the Hub
+
+After fine-tuning, push the model with `timm.models.push_to_hf_hub`. Supply a `model_config` dict to store metadata such as class names alongside the weights.
+
+```python
+import timm
+
+# Create and (in practice) fine-tune a model
+model = timm.create_model('resnet18', pretrained=True, num_classes=4)
+
+# Push to Hub — uploads to <your-username>/resnet18-finetuned
+model_cfg = dict(label_names=['cat', 'dog', 'bird', 'fish'])
+timm.models.push_to_hf_hub(model, 'resnet18-finetuned', model_config=model_cfg)
+```
+
+Running the above creates a repository at `<your-username>/resnet18-finetuned` on the Hub. The uploaded repository includes the model weights and a `config.json` that stores the `model_config` metadata.
+
+<Note>
+The repository name is appended to your Hub username automatically. To push to an organization, prefix the name with `org-name/` (e.g. `'my-org/resnet18-finetuned'`).
+</Note>
+
+---
+
+## Load a model from the Hub
+
+Use `timm.create_model` with the `hf-hub:` prefix and set `pretrained=True`. The weights **and** the `pretrained_cfg` (including class labels) are downloaded and applied automatically.
+
+```python
+import timm
+
+# Load by Hub repo path
+model = timm.create_model('hf-hub:nateraw/resnet18-random', pretrained=True)
+```
+
+<Tip>
+The `hf-hub:` prefix is supported everywhere `create_model` is used — including in training scripts via the `--model` argument:
+
+```bash
+python train.py --model hf-hub:nateraw/resnet18-random --data-dir /data/my-dataset ...
+```
+</Tip>
+
+---
+
+## End-to-end example
+
+```python
+import timm
+from huggingface_hub import notebook_login
+
+# 1. Authenticate
+notebook_login()
+
+# 2. Create and fine-tune a model
+model = timm.create_model('resnet18', pretrained=True, num_classes=4)
+# ... training loop here ...
+
+# 3. Push to Hub with label metadata
+model_cfg = dict(label_names=['a', 'b', 'c', 'd'])
+timm.models.push_to_hf_hub(model, 'resnet18-random', model_config=model_cfg)
+
+# 4. Reload from Hub anywhere
+model_reloaded = timm.create_model('hf-hub:nateraw/resnet18-random', pretrained=True)
+```
+
+---
+
+## How it works
+
+When `create_model` receives a name starting with `hf-hub:` (the canonical form; `hf_hub:` is accepted for backwards compatibility), it:
+
+1. Downloads the model weights and `config.json` from the Hub repository.
+2. Reads the `architecture` field from `config.json` to determine the model class.
+3. Builds the model using the stored architecture and loads the weights.
+4. Applies any `model_config` overrides (e.g. `num_classes`, `label_names`) from the config.
+
+This means the caller does not need to know the architecture in advance — it is inferred from the Hub repository automatically.
